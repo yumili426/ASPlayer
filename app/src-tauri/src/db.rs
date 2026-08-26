@@ -53,7 +53,25 @@ impl MediaDb {
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );",
-        )
+        )?;
+        // 迁移已存在的旧库：为其补充 M2 新增的列（CREATE TABLE IF NOT EXISTS 不会改旧表）
+        Self::migrate(conn)
+    }
+
+    /// 幂等迁移：给 media_files 补齐缺失的列（老版本数据库升级用）。
+    fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(media_files)")?
+            .query_map([], |r| r.get(1))?
+            .collect::<Result<_, _>>()?;
+
+        if !cols.iter().any(|c| c == "subtitle_status") {
+            conn.execute_batch(
+                "ALTER TABLE media_files ADD COLUMN subtitle_status TEXT NOT NULL DEFAULT 'none';
+                 ALTER TABLE media_files ADD COLUMN subtitle_lang TEXT NOT NULL DEFAULT '';",
+            )?;
+        }
+        Ok(())
     }
 
     /// 按路径插入或更新，返回 id
@@ -342,6 +360,48 @@ mod tests {
         assert_eq!(items[0].subtitle_status, "done");
         assert_eq!(items[0].subtitle_lang, "ja");
         assert_eq!(items[0].subtitle_count, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_adds_subtitle_columns_to_old_schema() -> rusqlite::Result<()> {
+        // 构造一个旧结构库：media_files 不含 subtitle_status/subtitle_lang
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            "CREATE TABLE media_files (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                path              TEXT NOT NULL UNIQUE,
+                title             TEXT NOT NULL,
+                media_type        TEXT NOT NULL,
+                duration_ms       INTEGER NOT NULL DEFAULT 0,
+                playback_position INTEGER NOT NULL DEFAULT 0,
+                speed             REAL NOT NULL DEFAULT 1.0,
+                added_at          TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        )?;
+
+        // 迁移前断言无新列
+        {
+            let cols: Vec<String> = conn
+                .prepare("PRAGMA table_info(media_files)")?
+                .query_map([], |r| r.get(1))?
+                .collect::<Result<_, _>>()?;
+            assert!(!cols.iter().any(|c| c == "subtitle_status"));
+        }
+
+        // 执行迁移
+        MediaDb::migrate(&conn)?;
+
+        // 迁移后断言新列存在
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(media_files)")?
+            .query_map([], |r| r.get(1))?
+            .collect::<Result<_, _>>()?;
+        assert!(cols.iter().any(|c| c == "subtitle_status"));
+        assert!(cols.iter().any(|c| c == "subtitle_lang"));
+
+        // 幂等：再跑一次不报错
+        MediaDb::migrate(&conn)?;
         Ok(())
     }
 }
