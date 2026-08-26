@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import CaptionPanel from "./CaptionPanel.vue";
 import type { MediaItem } from "../types";
 import { useSubtitle } from "../stores/subtitle";
@@ -26,8 +27,18 @@ const captionOn = ref(true);
 const rate = ref(1);
 const volume = ref(1);
 const muted = ref(false);
+const appWindow = getCurrentWindow();
+const isFullscreen = ref(false);
+const volTrack = ref<HTMLDivElement | null>(null);
+let audioCtx: AudioContext | null = null;
+let gainNode: GainNode | null = null;
+let boundEl: HTMLMediaElement | null = null;
+let volDragging = false;
 const rateSteps = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const rateText = computed(() => `${rate.value}x`);
+const volumePct = computed(() => Math.round(volume.value * 100));
+const volFillPct = computed(() => (volume.value / 2) * 100);
+const volTicks = [0, 50, 100, 150, 200];
 const showRateMenu = ref(false);
 const rateMenuEl = ref<HTMLDivElement | null>(null);
 
@@ -56,6 +67,12 @@ function restorePosition() {
 }
 onMounted(restorePosition);
 onMounted(() => document.addEventListener("click", onRateDocClick));
+onMounted(() => {
+  appWindow
+    .isFullscreen()
+    .then((v) => (isFullscreen.value = v))
+    .catch(() => {});
+});
 onBeforeUnmount(() => document.removeEventListener("click", onRateDocClick));
 watch(
   () => props.item?.id,
@@ -65,6 +82,13 @@ watch(
     else sub.reset();
   }
 );
+
+watch(mediaEl, (el) => {
+  if (el) {
+    initAudioGraph(el);
+    applyVolume();
+  }
+});
 
 async function doTranscribe(withTranslate: boolean) {
   if (!props.item) return;
@@ -111,6 +135,43 @@ function prev() {
   if (prv) emit("play", prv);
 }
 
+// Web Audio 增益：让音量上限从 100% 提升到 200%（HTMLMediaElement.volume 上限为 1）
+function initAudioGraph(el: HTMLMediaElement) {
+  try {
+    audioCtx = audioCtx ?? new AudioContext();
+    if (boundEl !== el) {
+      const src = audioCtx.createMediaElementSource(el);
+      gainNode = audioCtx.createGain();
+      src.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      boundEl = el;
+    }
+    if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+  } catch {
+    // Web Audio 不可用时降级：音量上限保持 100%
+    gainNode = null;
+  }
+}
+
+function applyVolume() {
+  const el = mediaEl.value;
+  if (!el) return;
+  const v = volume.value;
+  el.volume = Math.min(v, 1);
+  if (gainNode) gainNode.gain.value = v > 1 ? v : 1;
+}
+
+function setVolume(v: number) {
+  volume.value = Math.max(0, Math.min(2, v));
+  const el = mediaEl.value;
+  if (el) {
+    el.volume = Math.min(volume.value, 1);
+    if (gainNode) gainNode.gain.value = volume.value > 1 ? volume.value : 1;
+    if (volume.value > 0 && el.muted) el.muted = false;
+  }
+  if (audioCtx?.state === "suspended") audioCtx.resume().catch(() => {});
+}
+
 function toggleMute() {
   const el = mediaEl.value;
   if (!el) return;
@@ -118,33 +179,51 @@ function toggleMute() {
 }
 
 function adjustVolume(delta: number) {
-  const el = mediaEl.value;
-  if (!el) return;
-  el.volume = Math.max(0, Math.min(1, (el.volume || 1) + delta));
-  if (el.volume > 0 && el.muted) el.muted = false;
+  setVolume(volume.value + delta);
 }
 
 function onVolumeChange() {
+  // 仅同步静音状态；音量超过 100% 由 gain 承载，不能回写 el.volume
   const el = mediaEl.value;
   if (!el) return;
-  volume.value = el.volume;
   muted.value = el.muted;
 }
 
-function onVolumeInput(e: Event) {
-  const el = mediaEl.value;
-  if (!el) return;
-  el.volume = Number((e.target as HTMLInputElement).value);
-  if (el.volume > 0 && el.muted) el.muted = false;
+function onPlay() {
+  playing.value = true;
+  // 用户手势后恢复 AudioContext，避免 Web Audio 增益路径静音
+  if (audioCtx?.state === "suspended") audioCtx.resume().catch(() => {});
 }
 
-function toggleFullscreen() {
-  const el = mediaEl.value;
-  if (!el) return;
-  if (document.fullscreenElement) {
-    document.exitFullscreen();
-  } else if (el.requestFullscreen) {
-    el.requestFullscreen();
+function updateVolFromPointer(e: PointerEvent) {
+  const track = volTrack.value;
+  if (!track) return;
+  const rect = track.getBoundingClientRect();
+  const ratio = 1 - (e.clientY - rect.top) / rect.height;
+  setVolume(ratio * 2);
+}
+
+function onVolPointerDown(e: PointerEvent) {
+  volDragging = true;
+  volTrack.value?.setPointerCapture?.(e.pointerId);
+  updateVolFromPointer(e);
+}
+
+function onVolPointerMove(e: PointerEvent) {
+  if (volDragging) updateVolFromPointer(e);
+}
+
+function onVolPointerUp() {
+  volDragging = false;
+}
+
+async function toggleFullscreen() {
+  try {
+    const next = !isFullscreen.value;
+    await appWindow.setFullscreen(next);
+    isFullscreen.value = next;
+  } catch (e) {
+    console.error("[ASPlayer] 切换全屏失败:", e);
   }
 }
 
@@ -249,7 +328,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
         <video
           v-if="item.media_type === 'video'"
           ref="mediaEl" :src="src" controls
-          @play="playing = true" @pause="playing = false"
+          @play="onPlay" @pause="playing = false"
           @timeupdate="onTimeUpdate"
           @loadedmetadata="duration = ($event.target as HTMLVideoElement).duration"
           @ended="onEnded"
@@ -261,7 +340,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
         <audio
           v-if="item.media_type === 'audio'"
           ref="mediaEl" :src="src"
-          @play="playing = true" @pause="playing = false"
+          @play="onPlay" @pause="playing = false"
           @timeupdate="onTimeUpdate"
           @loadedmetadata="duration = ($event.target as HTMLAudioElement).duration"
           @ended="onEnded"
@@ -328,9 +407,24 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
             <svg v-if="muted || volume === 0" width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="m16 9 6 6"/><path d="m22 9-6 6"/></svg>
             <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="M15 9.3a4 4 0 0 1 0 5.4"/></svg>
           </button>
-          <input class="vol-slider" type="range" min="0" max="1" step="0.01" :value="volume" :disabled="!item" title="音量" @input="onVolumeInput" />
-          <button class="ctl" :disabled="!item" title="全屏" @click="toggleFullscreen">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+          <div class="vol-ctl">
+            <span class="vol-pct">{{ volumePct }}%</span>
+            <div
+              class="vol-track"
+              ref="volTrack"
+              title="音量"
+              @pointerdown="onVolPointerDown"
+              @pointermove="onVolPointerMove"
+              @pointerup="onVolPointerUp"
+              @pointercancel="onVolPointerUp"
+            >
+              <div class="vol-fill" :style="{ height: volFillPct + '%' }"></div>
+              <span v-for="t in volTicks" :key="t" class="vol-tick" :style="{ bottom: (t / 200 * 100) + '%' }"></span>
+            </div>
+          </div>
+          <button class="ctl" :disabled="!item" :title="isFullscreen ? '退出全屏' : '全屏'" @click="toggleFullscreen">
+            <svg v-if="isFullscreen" width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>
+            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
           </button>
         </div>
       </div>
@@ -625,28 +719,53 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
   stroke: var(--fg-2);
 }
 
-.vol-slider {
-  width: 84px;
-  appearance: none;
-  height: 4px;
-  border-radius: var(--radius-pill);
+.vol-ctl {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  height: 92px;
+  justify-content: flex-end;
+  padding: 0 4px;
+}
+
+.vol-pct {
+  font-size: 11px;
+  color: var(--fg-1);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  user-select: none;
+}
+
+.vol-track {
+  position: relative;
+  width: 6px;
+  flex: 1;
+  min-height: 0;
+  border-radius: 3px;
   background: var(--bg-2);
-  border: none;
-  outline: none;
   cursor: pointer;
+  overflow: hidden;
 }
 
-.vol-slider::-webkit-slider-thumb {
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
+.vol-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: var(--accent);
+  border-radius: 3px;
+  transition: height 0.06s linear;
 }
 
-.vol-slider:disabled {
-  opacity: 0.4;
-  cursor: default;
+.vol-tick {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--bg-1);
+  opacity: 0.65;
+  pointer-events: none;
 }
 
 .ctl.seek {
