@@ -47,6 +47,11 @@ async function importFolder() {
   loading.value = true;
   try {
     items.value = await invoke<MediaItem[]>("import_folder", { path: dir });
+    // eslint-disable-next-line no-console
+    console.log("[ASPlayer] 导入完成:", dir, "→", items.value.length, "个文件");
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 导入失败:", e);
   } finally {
     loading.value = false;
   }
