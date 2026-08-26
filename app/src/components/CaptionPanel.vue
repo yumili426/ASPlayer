@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { Subtitle } from "../types";
+import { useCaptionStyle } from "../stores/captionStyle";
 
 const props = defineProps<{
   subtitles: Subtitle[];
@@ -12,10 +13,17 @@ const current = computed<Subtitle | null>(() => {
   const ms = props.currentTime * 1000;
   return props.subtitles.find((s) => ms >= s.start_ms && ms < s.end_ms) ?? null;
 });
+
+const cap = useCaptionStyle();
+const capVars = computed(() => ({
+  "--cap-font": String(cap.captionStyle.fontScale),
+  "--cap-color": cap.captionStyle.color,
+  "--cap-bg": `rgba(0, 0, 0, ${cap.captionStyle.bgOpacity})`,
+}));
 </script>
 
 <template>
-  <div class="caption">
+  <div class="caption" :class="`pos-${cap.captionStyle.position}`" :style="capVars">
     <div v-if="status === 'transcribing' || status === 'translating'" class="caption-pending">
       <span class="spinner"></span>
       <span>{{ status === "translating" ? "正在翻译字幕…" : "正在转写字幕…" }}</span>
@@ -45,7 +53,6 @@ const current = computed<Subtitle | null>(() => {
 .caption {
   position: absolute;
   left: 50%;
-  bottom: 22px;
   transform: translateX(-50%);
   max-width: 82%;
   text-align: center;
@@ -53,16 +60,33 @@ const current = computed<Subtitle | null>(() => {
   z-index: 20;
 }
 
+.caption.pos-bottom {
+  bottom: 22px;
+}
+
+.caption.pos-top {
+  top: 22px;
+}
+
+.caption.pos-center {
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
 .caption-line {
   display: flex;
   flex-direction: column;
   gap: 4px;
   align-items: center;
+  background: var(--cap-bg, rgba(0, 0, 0, 0.35));
+  padding: 8px 14px;
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
 }
 
 .original {
-  color: #fff;
-  font-size: 19px;
+  color: var(--cap-color, #fff);
+  font-size: calc(19px * var(--cap-font, 1));
   font-weight: 500;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9);
   max-width: 100%;
@@ -71,8 +95,9 @@ const current = computed<Subtitle | null>(() => {
 }
 
 .translated {
-  color: #cdd3db;
-  font-size: 15px;
+  color: var(--cap-color, #cdd3db);
+  opacity: 0.85;
+  font-size: calc(15px * var(--cap-font, 1));
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
   max-width: 100%;
   line-height: 1.35;

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { getSettings, saveSettings } from "../api/subtitle";
+import { useCaptionStyle } from "../stores/captionStyle";
 
 const props = defineProps<{ open: boolean; theme: string }>();
 const emit = defineEmits<{ close: []; setTheme: [theme: "light" | "dark"] }>();
@@ -26,6 +27,22 @@ const apiKey = ref("");
 const apiModel = ref("deepseek-chat");
 const providerIdx = ref(-1); // -1 = 自定义，不匹配任何预设
 const saving = ref(false);
+
+const cap = useCaptionStyle();
+const captionStyle = cap.captionStyle;
+const capColors = [
+  "#ffffff",
+  "#f0f0f5",
+  "#000000",
+  "#ffd60a",
+  "#0a84ff",
+  "#30d158",
+  "#ff453a",
+  "#ff9f0a",
+];
+function onCaptionColor(e: Event) {
+  captionStyle.color = (e.target as HTMLInputElement).value;
+}
 
 // 根据 base 反推当前匹配的预设（用于回显下拉）
 function matchProvider(base: string, model: string): number {
@@ -111,6 +128,96 @@ function onClick(e: MouseEvent) {
             </button>
           </div>
         </div>
+      </div>
+
+      <div class="section">
+        <div class="section-label">字幕</div>
+
+        <label class="field">
+          <span>字号 {{ Math.round(captionStyle.fontScale * 100) }}%</span>
+          <input
+            type="range"
+            min="0.8"
+            max="1.6"
+            step="0.1"
+            v-model.number="captionStyle.fontScale"
+          />
+        </label>
+
+        <label class="field">
+          <span>颜色</span>
+          <div class="cap-colors">
+            <button
+              v-for="c in capColors"
+              :key="c"
+              class="cap-chip"
+              :class="{ active: captionStyle.color === c }"
+              :style="{ background: c }"
+              :title="c"
+              @click="captionStyle.color = c"
+            ></button>
+            <label class="cap-chip custom">
+              <input
+                type="color"
+                :value="captionStyle.color"
+                @input="onCaptionColor"
+                title="自定义颜色"
+              />
+            </label>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>位置</span>
+          <div class="segmented">
+            <button
+              class="segment"
+              :class="{ active: captionStyle.position === 'top' }"
+              @click="captionStyle.position = 'top'"
+            >
+              上
+            </button>
+            <button
+              class="segment"
+              :class="{ active: captionStyle.position === 'center' }"
+              @click="captionStyle.position = 'center'"
+            >
+              中
+            </button>
+            <button
+              class="segment"
+              :class="{ active: captionStyle.position === 'bottom' }"
+              @click="captionStyle.position = 'bottom'"
+            >
+              下
+            </button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span>背景不透明度 {{ Math.round(captionStyle.bgOpacity * 100) }}%</span>
+          <input
+            type="range"
+            min="0"
+            max="0.85"
+            step="0.05"
+            v-model.number="captionStyle.bgOpacity"
+          />
+        </label>
+
+        <div
+          class="cap-preview"
+          :style="{
+            color: captionStyle.color,
+            fontSize: 19 * captionStyle.fontScale + 'px',
+            background: `rgba(0, 0, 0, ${captionStyle.bgOpacity})`,
+          }"
+        >
+          <span class="cap-preview-orig">这是一段字幕预览</span>
+          <span class="cap-preview-trans">This is a subtitle preview</span>
+        </div>
+
+        <button class="rs-btn" @click="cap.resetCaptionStyle()">重置默认</button>
       </div>
 
       <div class="section">
@@ -327,6 +434,93 @@ function onClick(e: MouseEvent) {
 .save-btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.cap-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.cap-chip {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  padding: 0;
+  cursor: pointer;
+}
+
+.cap-chip.active {
+  box-shadow: 0 0 0 2px var(--bg-1), 0 0 0 4px var(--accent);
+}
+
+.cap-chip.custom {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: conic-gradient(
+    #ff453a,
+    #ff9f0a,
+    #ffd60a,
+    #30d158,
+    #0a84ff,
+    #bf5af2,
+    #ff453a
+  );
+  overflow: hidden;
+  position: relative;
+}
+
+.cap-chip.custom input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  padding: 0;
+  border: none;
+}
+
+.cap-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin-bottom: 14px;
+  text-align: center;
+  font-weight: 500;
+}
+
+.cap-preview-orig {
+  line-height: 1.35;
+}
+
+.cap-preview-trans {
+  opacity: 0.85;
+  font-size: 0.78em;
+  line-height: 1.35;
+}
+
+.rs-btn {
+  width: 100%;
+  padding: 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--fg-2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.rs-btn:hover {
+  background: var(--bg-2);
+  color: var(--fg-1);
 }
 
 .foot-hint {

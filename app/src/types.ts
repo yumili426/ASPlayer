@@ -24,3 +24,12 @@ export interface ProgressEvent {
   progress: number;
   message: string;
 }
+
+export type CaptionPosition = "top" | "center" | "bottom";
+
+export interface CaptionStyle {
+  fontScale: number; // 0.8 ~ 1.6
+  color: string; // 主文本色（十六进制）
+  bgOpacity: number; // 0 ~ 0.85 背景不透明度
+  position: CaptionPosition; // 字幕位置
+}
