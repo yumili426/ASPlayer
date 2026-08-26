@@ -26,12 +26,14 @@ export interface ProgressEvent {
 }
 
 export type CaptionPosition = "top" | "center" | "bottom";
+export type CaptionMode = "original" | "bilingual" | "translation";
 
 export interface CaptionStyle {
   fontScale: number; // 0.8 ~ 1.6
   color: string; // 主文本色（十六进制）
   bgOpacity: number; // 0 ~ 0.85 背景不透明度
   position: CaptionPosition; // 字幕位置
+  mode: CaptionMode; // 字幕显示模式：原文 / 双语 / 译文
 }
 
 export type ShortcutActionName =

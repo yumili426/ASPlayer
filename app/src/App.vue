@@ -21,7 +21,7 @@ const items = ref<MediaItem[]>([]);
 const current = ref<MediaItem | null>(null);
 const loading = ref(false);
 const settingsOpen = ref(false);
-const theme = ref<"light" | "dark">("dark");
+const theme = ref<"light" | "dark" | "system">("system");
 const showPlaylist = ref(true);
 const showSubtitle = ref(true);
 const unlisteners: (() => void)[] = [];
@@ -30,21 +30,34 @@ const stageRef = ref<any>(null);
 const THEME_KEY = "asplayer-theme-v2";
 const saved = (() => {
   try {
-    return localStorage.getItem(THEME_KEY) as "light" | "dark" | null;
+    return localStorage.getItem(THEME_KEY) as "light" | "dark" | "system" | null;
   } catch {
     return null;
   }
 })();
-theme.value = saved ?? "dark";
-document.documentElement.dataset.theme = theme.value;
+const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
 
-function setTheme(t: "light" | "dark") {
+theme.value = saved ?? "system";
+
+function applyTheme() {
+  const resolved =
+    theme.value === "system" ? (prefersDark.matches ? "dark" : "light") : theme.value;
+  document.documentElement.dataset.theme = resolved;
+}
+applyTheme();
+
+function setTheme(t: "light" | "dark" | "system") {
   theme.value = t;
-  document.documentElement.dataset.theme = t;
+  applyTheme();
   try {
     localStorage.setItem(THEME_KEY, t);
   } catch {}
 }
+
+function onSystemThemeChange() {
+  if (theme.value === "system") applyTheme();
+}
+prefersDark.addEventListener("change", onSystemThemeChange);
 
 async function refresh() {
   loading.value = true;
@@ -226,6 +239,7 @@ onMounted(async () => {
 onUnmounted(() => {
   unlisteners.forEach((u) => u());
   window.removeEventListener("keydown", onKeydown);
+  prefersDark.removeEventListener("change", onSystemThemeChange);
 });
 </script>
 

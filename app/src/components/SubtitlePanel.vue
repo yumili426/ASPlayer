@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { Subtitle } from "../types";
+import { useCaptionStyle } from "../stores/captionStyle";
 
 const props = defineProps<{
   subtitles: Subtitle[];
@@ -12,6 +13,9 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ close: []; seek: [t: number] }>();
+
+const cap = useCaptionStyle();
+const mode = computed(() => cap.captionStyle.mode);
 
 const currentMs = computed(() => Math.floor(props.currentTime * 1000));
 
@@ -46,6 +50,11 @@ function stageLabel() {
   <aside class="subpanel">
     <div class="sp-head">
       <span class="sp-title">字幕</span>
+      <div class="sp-mode">
+        <button class="sp-modeseg" :class="{ active: mode === 'original' }" @click="cap.captionStyle.mode = 'original'">原文</button>
+        <button class="sp-modeseg" :class="{ active: mode === 'bilingual' }" @click="cap.captionStyle.mode = 'bilingual'">双语</button>
+        <button class="sp-modeseg" :class="{ active: mode === 'translation' }" @click="cap.captionStyle.mode = 'translation'">译文</button>
+      </div>
       <div class="sp-actions">
         <span v-if="subtitles.length" class="sp-count">{{ subtitles.length }} 段</span>
         <button class="sp-close" title="关闭字幕面板" @click="emit('close')">
@@ -89,8 +98,9 @@ function stageLabel() {
       >
         <span class="sp-line-time">{{ fmt(s.start_ms) }}</span>
         <div class="sp-line-body">
-          <span class="sp-line-orig">{{ s.text }}</span>
-          <span v-if="s.translation" class="sp-line-trans">{{ s.translation }}</span>
+          <span v-if="mode !== 'translation'" class="sp-line-orig">{{ s.text }}</span>
+          <span v-if="mode === 'bilingual' && s.translation" class="sp-line-trans">{{ s.translation }}</span>
+          <span v-if="mode === 'translation'" class="sp-line-orig">{{ s.translation || s.text }}</span>
         </div>
       </div>
     </div>
@@ -127,6 +137,30 @@ function stageLabel() {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.sp-mode {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-2);
+  border-radius: 7px;
+  padding: 2px;
+}
+
+.sp-modeseg {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sp-modeseg.active {
+  background: var(--bg-1);
+  color: var(--fg-1);
 }
 
 .sp-count {

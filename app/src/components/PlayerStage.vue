@@ -24,6 +24,8 @@ const playing = ref(false);
 const duration = ref(0);
 const captionOn = ref(true);
 const rate = ref(1);
+const volume = ref(1);
+const muted = ref(false);
 const rateSteps = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const rateText = computed(() => `${rate.value}x`);
 const showRateMenu = ref(false);
@@ -119,6 +121,21 @@ function adjustVolume(delta: number) {
   const el = mediaEl.value;
   if (!el) return;
   el.volume = Math.max(0, Math.min(1, (el.volume || 1) + delta));
+  if (el.volume > 0 && el.muted) el.muted = false;
+}
+
+function onVolumeChange() {
+  const el = mediaEl.value;
+  if (!el) return;
+  volume.value = el.volume;
+  muted.value = el.muted;
+}
+
+function onVolumeInput(e: Event) {
+  const el = mediaEl.value;
+  if (!el) return;
+  el.volume = Number((e.target as HTMLInputElement).value);
+  if (el.volume > 0 && el.muted) el.muted = false;
 }
 
 function toggleFullscreen() {
@@ -236,6 +253,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
           @timeupdate="onTimeUpdate"
           @loadedmetadata="duration = ($event.target as HTMLVideoElement).duration"
           @ended="onEnded"
+          @volumechange="onVolumeChange"
         ></video>
         <div v-else class="artwork">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M4 13a8 8 0 0 1 16 0M12 13v5"/><rect x="3" y="13" width="4" height="6" rx="1.5"/><rect x="17" y="13" width="4" height="6" rx="1.5"/></svg>
@@ -247,6 +265,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
           @timeupdate="onTimeUpdate"
           @loadedmetadata="duration = ($event.target as HTMLAudioElement).duration"
           @ended="onEnded"
+          @volumechange="onVolumeChange"
         ></audio>
         <p class="now-title">{{ item.title }}</p>
       </div>
@@ -302,6 +321,16 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
           <button class="ctl seek" title="前进 15 秒" :disabled="!item" @click="seekBy(15)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
             <span class="seek-num">15</span>
+          </button>
+        </div>
+        <div class="btn-group">
+          <button class="ctl" :disabled="!item" :title="muted || volume === 0 ? '取消静音' : '静音'" @click="toggleMute">
+            <svg v-if="muted || volume === 0" width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="m16 9 6 6"/><path d="m22 9-6 6"/></svg>
+            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="M15 9.3a4 4 0 0 1 0 5.4"/></svg>
+          </button>
+          <input class="vol-slider" type="range" min="0" max="1" step="0.01" :value="volume" :disabled="!item" title="音量" @input="onVolumeInput" />
+          <button class="ctl" :disabled="!item" title="全屏" @click="toggleFullscreen">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
           </button>
         </div>
       </div>
@@ -594,6 +623,30 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
   flex: 0 0 18px;
   display: block;
   stroke: var(--fg-2);
+}
+
+.vol-slider {
+  width: 84px;
+  appearance: none;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-2);
+  border: none;
+  outline: none;
+  cursor: pointer;
+}
+
+.vol-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.vol-slider:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .ctl.seek {

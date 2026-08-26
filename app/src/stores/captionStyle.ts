@@ -6,6 +6,7 @@ export const defaultCaptionStyle: CaptionStyle = {
   color: "#ffffff",
   bgOpacity: 0.35, // 0 ~ 0.85
   position: "bottom", // top | center | bottom
+  mode: "bilingual", // original | bilingual | translation
 };
 
 const STORAGE_KEY = "asplayer-caption-style-v1";

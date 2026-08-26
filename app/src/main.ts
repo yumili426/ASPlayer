@@ -10,7 +10,11 @@ let saved: string | null = null;
 try {
   saved = localStorage.getItem(THEME_KEY);
 } catch {}
-document.documentElement.dataset.theme = saved ?? "dark";
+// 首次运行跟随系统；之后记住用户选择（light / dark / system）
+const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
+const resolved =
+  saved === "light" || saved === "dark" ? saved : prefersDark.matches ? "dark" : "light";
+document.documentElement.dataset.theme = resolved;
 
 createApp(App).mount("#app");
 

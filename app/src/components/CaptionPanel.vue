@@ -15,6 +15,7 @@ const current = computed<Subtitle | null>(() => {
 });
 
 const cap = useCaptionStyle();
+const mode = computed(() => cap.captionStyle.mode);
 const capVars = computed(() => ({
   "--cap-font": String(cap.captionStyle.fontScale),
   "--cap-color": cap.captionStyle.color,
@@ -41,8 +42,9 @@ const capVars = computed(() => ({
 
     <template v-else>
       <p v-if="current" class="caption-line">
-        <span class="original">{{ current.text }}</span>
-        <span v-if="current.translation" class="translated">{{ current.translation }}</span>
+        <span v-if="mode !== 'translation'" class="original">{{ current.text }}</span>
+        <span v-if="mode === 'bilingual' && current.translation" class="translated">{{ current.translation }}</span>
+        <span v-if="mode === 'translation'" class="original">{{ current.translation || current.text }}</span>
       </p>
       <p v-else class="caption-idle">…</p>
     </template>

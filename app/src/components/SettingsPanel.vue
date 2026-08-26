@@ -8,8 +8,8 @@ import type { ShortcutActionName } from "../types";
 
 type TabKey = "appearance" | "playback" | "subtitle" | "translate" | "shortcuts";
 
-const props = defineProps<{ open: boolean; theme: string }>();
-const emit = defineEmits<{ close: []; setTheme: [theme: "light" | "dark"] }>();
+const props = defineProps<{ open: boolean; theme: "light" | "dark" | "system" }>();
+const emit = defineEmits<{ close: []; setTheme: [theme: "light" | "dark" | "system"] }>();
 
 interface Provider {
   label: string;
@@ -197,6 +197,14 @@ function onClick(e: MouseEvent) {
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg>
               深色
+            </button>
+            <button
+              class="segment"
+              :class="{ active: theme === 'system' }"
+              @click="emit('setTheme', 'system')"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              跟随系统
             </button>
           </div>
         </div>
