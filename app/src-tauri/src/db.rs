@@ -32,7 +32,26 @@ impl MediaDb {
                 duration_ms       INTEGER NOT NULL DEFAULT 0,
                 playback_position INTEGER NOT NULL DEFAULT 0,
                 speed             REAL NOT NULL DEFAULT 1.0,
+                subtitle_status   TEXT NOT NULL DEFAULT 'none',
+                subtitle_lang     TEXT NOT NULL DEFAULT '',
                 added_at          TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS subtitles (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                media_id   INTEGER NOT NULL,
+                start_ms   INTEGER NOT NULL,
+                end_ms     INTEGER NOT NULL,
+                text       TEXT NOT NULL DEFAULT '',
+                translation TEXT NOT NULL DEFAULT '',
+                ordinal    INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (media_id) REFERENCES media_files(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_sub_media ON subtitles(media_id, start_ms);
+
+            CREATE TABLE IF NOT EXISTS settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
             );",
         )
     }
@@ -49,8 +68,10 @@ impl MediaDb {
 
     pub fn list_media(&self) -> rusqlite::Result<Vec<MediaItem>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, title, media_type, duration_ms, playback_position
-             FROM media_files ORDER BY added_at DESC, id DESC",
+            "SELECT m.id, m.path, m.title, m.media_type, m.duration_ms, m.playback_position,
+                    m.subtitle_status, m.subtitle_lang,
+                    (SELECT COUNT(*) FROM subtitles s WHERE s.media_id = m.id)
+             FROM media_files m ORDER BY m.added_at DESC, m.id DESC",
         )?;
         let rows = stmt.query_map([], |r| {
             Ok(MediaItem {
@@ -60,6 +81,9 @@ impl MediaDb {
                 media_type: r.get(3)?,
                 duration_ms: r.get(4)?,
                 playback_position: r.get(5)?,
+                subtitle_status: r.get(6)?,
+                subtitle_lang: r.get(7)?,
+                subtitle_count: r.get(8)?,
             })
         })?;
         rows.collect()
@@ -71,6 +95,159 @@ impl MediaDb {
             [position_ms.to_string().as_str(), &id.to_string()],
         )?;
         Ok(())
+    }
+
+    /// 清空某媒体的所有字幕（重新转写前调用）
+    pub fn clear_subtitles(&self, media_id: i64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "DELETE FROM subtitles WHERE media_id = ?1",
+            [&media_id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// 写入单条字幕段（upsert by media_id+start_ms）
+    pub fn save_subtitle(
+        &self,
+        media_id: i64,
+        start_ms: i64,
+        end_ms: i64,
+        text: &str,
+        translation: &str,
+        ordinal: i64,
+    ) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO subtitles (media_id, start_ms, end_ms, text, translation, ordinal)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT DO UPDATE SET end_ms = excluded.end_ms,
+                                       text = excluded.text,
+                                       translation = CASE WHEN excluded.translation = '' THEN subtitles.translation ELSE excluded.translation END,
+                                       ordinal = excluded.ordinal",
+            rusqlite::params![
+                media_id,
+                start_ms,
+                end_ms,
+                text,
+                translation,
+                ordinal
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// 读取某媒体的全部字幕（按开始时间升序）
+    pub fn get_subtitles(
+        &self,
+        media_id: i64,
+    ) -> rusqlite::Result<Vec<crate::transcriber::SubtitleRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT start_ms, end_ms, text, translation, ordinal
+             FROM subtitles WHERE media_id = ?1 ORDER BY start_ms ASC",
+        )?;
+        let rows = stmt.query_map([&media_id.to_string()], |r| {
+            Ok(crate::transcriber::SubtitleRow {
+                start_ms: r.get(0)?,
+                end_ms: r.get(1)?,
+                text: r.get(2)?,
+                translation: r.get(3)?,
+                ordinal: r.get(4)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// 仅读取尚未翻译的字幕段（translation 为空）
+    pub fn get_untranslated_subtitles(
+        &self,
+        media_id: i64,
+    ) -> rusqlite::Result<Vec<crate::transcriber::SubtitleRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT start_ms, end_ms, text, translation, ordinal
+             FROM subtitles WHERE media_id = ?1 AND translation = '' ORDER BY start_ms ASC",
+        )?;
+        let rows = stmt.query_map([&media_id.to_string()], |r| {
+            Ok(crate::transcriber::SubtitleRow {
+                start_ms: r.get(0)?,
+                end_ms: r.get(1)?,
+                text: r.get(2)?,
+                translation: r.get(3)?,
+                ordinal: r.get(4)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// 更新单条字幕的译文
+    pub fn update_translation(
+        &self,
+        media_id: i64,
+        start_ms: i64,
+        translation: &str,
+    ) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE subtitles SET translation = ?1 WHERE media_id = ?2 AND start_ms = ?3",
+            rusqlite::params![translation, media_id, start_ms],
+        )?;
+        Ok(())
+    }
+
+    /// 设置某媒体的字幕状态与语言
+    pub fn set_subtitle_status(
+        &self,
+        media_id: i64,
+        status: &str,
+        lang: &str,
+    ) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE media_files SET subtitle_status = ?1, subtitle_lang = ?2 WHERE id = ?3",
+            rusqlite::params![status, lang, media_id],
+        )?;
+        Ok(())
+    }
+
+    /// 读取某媒体的状态
+    pub fn get_subtitle_status(
+        &self,
+        media_id: i64,
+    ) -> rusqlite::Result<(String, String)> {
+        self.conn.query_row(
+            "SELECT subtitle_status, subtitle_lang FROM media_files WHERE id = ?1",
+            [&media_id.to_string()],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
+    /// 读取某媒体的 path 与 title
+    pub fn media_path(&self, media_id: i64) -> rusqlite::Result<(String, String)> {
+        self.conn.query_row(
+            "SELECT path, title FROM media_files WHERE id = ?1",
+            [&media_id.to_string()],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
+    /// 保存/覆盖一条设置
+    pub fn save_setting(&self, key: &str, value: &str) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [key, value],
+        )?;
+        Ok(())
+    }
+
+    /// 读取一条设置，缺省返回 None
+    pub fn get_setting(&self, key: &str) -> rusqlite::Result<Option<String>> {
+        let mut stmt = self.conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
+        let mut rows = stmt.query_map([key], |r| r.get::<_, String>(0))?;
+        rows.next().transpose()
+    }
+
+    /// 读取全部设置（k/v 键值对）
+    pub fn all_settings(&self) -> rusqlite::Result<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare("SELECT key, value FROM settings")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect()
     }
 }
 
@@ -104,4 +281,68 @@ mod tests {
         assert_eq!(items[0].playback_position, 42_000);
         Ok(())
     }
+
+    #[test]
+    fn subtitles_roundtrip() -> rusqlite::Result<()> {
+        let db = MediaDb::open_in_memory()?;
+        let id = db.upsert_media("D:/m/a.mp3", "a", "audio")?;
+        db.save_subtitle(id, 0, 1500, "おやすみ", "", 0)?;
+        db.save_subtitle(id, 2000, 4000, "good night", "", 1)?;
+        // 更新第一条译文
+        db.update_translation(id, 0, "晚安")?;
+
+        let rows = db.get_subtitles(id)?;
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].translation, "晚安");
+        assert_eq!(rows[1].text, "good night");
+
+        // 未翻译段只剩第二条
+        let untrans = db.get_untranslated_subtitles(id)?;
+        assert_eq!(untrans.len(), 1);
+        assert_eq!(untrans[0].text, "good night");
+        Ok(())
+    }
+
+    #[test]
+    fn subtitle_status_roundtrip() -> rusqlite::Result<()> {
+        let db = MediaDb::open_in_memory()?;
+        let id = db.upsert_media("D:/m/a.mp3", "a", "audio")?;
+        db.set_subtitle_status(id, "transcribing", "ja")?;
+        let (s, l) = db.get_subtitle_status(id)?;
+        assert_eq!(s, "transcribing");
+        assert_eq!(l, "ja");
+        db.set_subtitle_status(id, "done", "ja")?;
+        let (s, _) = db.get_subtitle_status(id)?;
+        assert_eq!(s, "done");
+        Ok(())
+    }
+
+    #[test]
+    fn settings_roundtrip() -> rusqlite::Result<()> {
+        let db = MediaDb::open_in_memory()?;
+        assert_eq!(db.get_setting("api_key")?, None);
+        db.save_setting("api_key", "sk-test")?;
+        db.save_setting("api_base", "https://api.deepseek.com/v1")?;
+        assert_eq!(db.get_setting("api_key")?.as_deref(), Some("sk-test"));
+        // 覆盖
+        db.save_setting("api_key", "sk-new")?;
+        assert_eq!(db.get_setting("api_key")?.as_deref(), Some("sk-new"));
+        let all = db.all_settings()?;
+        assert_eq!(all.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn list_media_includes_subtitle_fields() -> rusqlite::Result<()> {
+        let db = MediaDb::open_in_memory()?;
+        let id = db.upsert_media("D:/m/a.mp4", "a", "video")?;
+        db.save_subtitle(id, 0, 1000, "hi", "", 0)?;
+        db.set_subtitle_status(id, "done", "ja")?;
+        let items = db.list_media()?;
+        assert_eq!(items[0].subtitle_status, "done");
+        assert_eq!(items[0].subtitle_lang, "ja");
+        assert_eq!(items[0].subtitle_count, 1);
+        Ok(())
+    }
 }
+
