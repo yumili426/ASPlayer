@@ -37,6 +37,8 @@ let audioCtx: AudioContext | null = null;
 let gainNode: GainNode | null = null;
 let boundEl: HTMLMediaElement | null = null;
 let volDragging = false;
+let gainReady = false;
+let gainAttempt = false;
 const rateSteps = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const rateText = computed(() => `${rate.value}x`);
 const volumePct = computed(() => Math.round(volume.value * 100));
@@ -87,6 +89,7 @@ watch(
 );
 
 watch(mediaEl, (el) => {
+  gainAttempt = false; // 媒体元素变化时允许重新尝试建立增益
   if (el) applyVolume();
 });
 
@@ -135,22 +138,29 @@ function prev() {
   if (prv) emit("play", prv);
 }
 
-// Web Audio 增益：仅当音量 > 100% 才接管媒体流，避免日常播放受 autoplay 策略影响而静音
-function ensureGain(el: HTMLMediaElement) {
-  if (gainNode && boundEl === el) return;
+// Web Audio 增益：仅当音量 > 100% 才考虑接管。关键：必须等 AudioContext 真正 running 才
+// createMediaElementSource，否则接管后若 ctx 处于 suspended 会整条静音（且不可逆）。
+async function ensureGain() {
+  if (gainAttempt) return; // 已尝试过接管（无论成败），避免重复触发
+  gainAttempt = true;
   try {
     audioCtx = audioCtx ?? new (window.AudioContext || (window as any).webkitAudioContext)();
-    if (boundEl !== el) {
-      const src = audioCtx.createMediaElementSource(el);
+    if (audioCtx.state === "suspended") {
+      await audioCtx.resume();
+    }
+    // 无法激活则不接管：保持原生发声（此时音量封顶 100%，但绝不静音）
+    if (audioCtx.state !== "running" || !mediaEl.value) return;
+    if (boundEl !== mediaEl.value) {
+      const src = audioCtx.createMediaElementSource(mediaEl.value);
       gainNode = audioCtx.createGain();
       src.connect(gainNode);
       gainNode.connect(audioCtx.destination);
-      boundEl = el;
+      boundEl = mediaEl.value;
+      gainReady = true;
     }
-    if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
   } catch {
-    // 增益不可用时降级：>100% 封顶为 100%（原生路径发声，保证有声）
     gainNode = null;
+    gainReady = false;
   }
 }
 
@@ -159,14 +169,14 @@ function applyVolume() {
   if (!el) return;
   const v = volume.value;
   if (v > 1) {
-    // 超过 100%：接管媒体流用增益放大
-    ensureGain(el);
+    // 原生音量已拉满到 100%，剩余部分交给增益（若已就绪）
     el.volume = 1;
-    if (gainNode) gainNode.gain.value = v;
+    if (gainReady && gainNode) gainNode.gain.value = v;
+    else ensureGain(); // 异步尝试接管；期间保持 100% 发声，绝不静音
   } else {
-    // 0~100%：走原生路径，绝不静音
+    // 0~100%：走原生路径，保证有声
     el.volume = v;
-    if (gainNode) gainNode.gain.value = 1;
+    if (gainReady && gainNode) gainNode.gain.value = 1;
   }
 }
 
@@ -183,7 +193,6 @@ function setVolume(v: number) {
     applyVolume();
     if (volume.value > 0 && el.muted) el.muted = false;
   }
-  if (audioCtx?.state === "suspended") audioCtx.resume().catch(() => {});
   flashVolumeOsd();
 }
 
@@ -786,12 +795,14 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
   flex-direction: column;
   align-items: center;
   gap: 5px;
+  width: 46px;
   height: 80px;
   justify-content: flex-end;
-  padding: 0 4px;
 }
 
 .vol-pct {
+  width: 100%;
+  text-align: center;
   font-size: 11px;
   color: var(--fg-1);
   font-variant-numeric: tabular-nums;
