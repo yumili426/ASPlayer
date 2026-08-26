@@ -46,7 +46,7 @@ function fmtDuration(ms: number): string {
     <!-- 空态 / 列表 -->
     <div v-if="items.length === 0" class="pl-empty">
       <p>媒体库还是空的</p>
-      <p class="pl-empty-sub">点击右上角 ＋ 导入 ASMR 文件夹</p>
+      <p class="pl-empty-sub">点击右上角 ＋ 导入媒体文件夹</p>
     </div>
 
     <div v-else class="pl-scroll">

@@ -4,8 +4,14 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 
 /// 支持的媒体扩展名（小写）
-const AUDIO_EXTS: &[&str] = &["mp3", "m4a", "wav", "flac", "ogg", "aac"];
-const VIDEO_EXTS: &[&str] = &["mp4", "webm", "mkv", "mov"];
+const AUDIO_EXTS: &[&str] = &[
+    "mp3", "m4a", "wav", "flac", "ogg", "oga", "opus", "aac", "m4b", "m4p",
+    "wma", "aiff", "aif", "ape", "mka", "mp2", "amr", "ac3", "dts", "dsf", "dff",
+];
+const VIDEO_EXTS: &[&str] = &[
+    "mp4", "m4v", "webm", "mkv", "mov", "avi", "wmv", "flv", "ts", "m2ts",
+    "mts", "3gp", "3g2", "ogv", "vob", "asf", "rm", "rmvb", "f4v",
+];
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MediaItem {
@@ -64,6 +70,9 @@ mod tests {
     fn classify_by_extension() {
         assert_eq!(classify_media(Path::new("a/b.MP4")), Some("video"));
         assert_eq!(classify_media(Path::new("a/b.mp3")), Some("audio"));
+        assert_eq!(classify_media(Path::new("a/b.opus")), Some("audio"));
+        assert_eq!(classify_media(Path::new("a/b.wma")), Some("audio"));
+        assert_eq!(classify_media(Path::new("a/b.avi")), Some("video"));
         assert_eq!(classify_media(Path::new("a/b.txt")), None);
         assert_eq!(classify_media(Path::new("a/b")), None);
     }

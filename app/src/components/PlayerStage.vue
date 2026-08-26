@@ -203,7 +203,7 @@ onUnmounted(() => {
           </svg>
         </div>
         <p class="empty-text">还没有在播放</p>
-        <p class="empty-sub">从右侧播放列表选择，或导入你的 ASMR 资源</p>
+        <p class="empty-sub">从右侧播放列表选择，或导入你的媒体文件</p>
         <button class="open-btn" @click="emit('import')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h4l2-2h4l2 2h4v11H4z"/></svg>
           打开文件
