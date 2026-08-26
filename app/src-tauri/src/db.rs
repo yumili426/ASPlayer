@@ -115,6 +115,15 @@ impl MediaDb {
         Ok(())
     }
 
+    /// 回写前端探测到的媒体时长（导入时未探测，由前端加载元数据后补齐）
+    pub fn update_media_duration(&self, id: i64, duration_ms: i64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE media_files SET duration_ms = ?1 WHERE id = ?2",
+            [duration_ms.to_string().as_str(), &id.to_string()],
+        )?;
+        Ok(())
+    }
+
     /// 清空某媒体的所有字幕（重新转写前调用）
     pub fn clear_subtitles(&self, media_id: i64) -> rusqlite::Result<()> {
         self.conn.execute(

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import PlayerStage from "./components/PlayerStage.vue";
 import PlaylistPanel from "./components/PlaylistPanel.vue";
 import SubtitlePanel from "./components/SubtitlePanel.vue";
@@ -63,6 +63,7 @@ async function refresh() {
   loading.value = true;
   try {
     items.value = await invoke<MediaItem[]>("list_media");
+    probeDurations();
   } finally {
     loading.value = false;
   }
@@ -75,6 +76,7 @@ async function importFolder() {
   loading.value = true;
   try {
     items.value = await invoke<MediaItem[]>("import_folder", { path: dir });
+    probeDurations();
     // eslint-disable-next-line no-console
     console.log("[ASPlayer] 导入完成:", dir, "→", items.value.length, "个文件");
   } catch (e) {
@@ -105,6 +107,7 @@ async function importFiles() {
   loading.value = true;
   try {
     items.value = await invoke<MediaItem[]>("import_files", { paths });
+    probeDurations();
     // eslint-disable-next-line no-console
     console.log("[ASPlayer] 导入文件:", paths, "→", items.value.length, "个");
   } catch (e) {
@@ -112,6 +115,26 @@ async function importFiles() {
     console.error("[ASPlayer] 导入文件失败:", e);
   } finally {
     loading.value = false;
+  }
+}
+
+function probeDurations() {
+  // 导入时未探测时长（全部为 0）。用隐藏的 video/audio 元素读取元数据，回写 DB 并即时更新列表显示。
+  for (const m of items.value) {
+    if (m.duration_ms > 0) continue;
+    const el = document.createElement(m.media_type === "video" ? "video" : "audio");
+    el.preload = "metadata";
+    el.muted = true;
+    el.src = convertFileSrc(m.path);
+    el.onloadedmetadata = () => {
+      const ms = Math.round(el.duration * 1000);
+      if (isFinite(ms) && ms > 0) {
+        m.duration_ms = ms;
+        invoke("update_media_duration", { id: m.id, durationMs: ms }).catch(() => {});
+      }
+      el.remove();
+    };
+    el.onerror = () => el.remove();
   }
 }
 

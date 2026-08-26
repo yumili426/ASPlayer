@@ -31,6 +31,7 @@ const appWindow = getCurrentWindow();
 const isFullscreen = ref(false);
 const volTrack = ref<HTMLDivElement | null>(null);
 const showVolOsd = ref(false);
+const showVolPop = ref(false);
 let volOsdTimer: number | null = null;
 let audioCtx: AudioContext | null = null;
 let gainNode: GainNode | null = null;
@@ -39,8 +40,8 @@ let volDragging = false;
 const rateSteps = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const rateText = computed(() => `${rate.value}x`);
 const volumePct = computed(() => Math.round(volume.value * 100));
-const volFillPct = computed(() => (volume.value / 2) * 100);
-const volTicks = [0, 50, 100, 150, 200];
+const volFillPct = computed(() => Math.min(volume.value, 1) * 100);
+const volTicks = [0, 25, 50, 75, 100];
 const showRateMenu = ref(false);
 const rateMenuEl = ref<HTMLDivElement | null>(null);
 
@@ -86,10 +87,7 @@ watch(
 );
 
 watch(mediaEl, (el) => {
-  if (el) {
-    initAudioGraph(el);
-    applyVolume();
-  }
+  if (el) applyVolume();
 });
 
 async function doTranscribe(withTranslate: boolean) {
@@ -137,10 +135,11 @@ function prev() {
   if (prv) emit("play", prv);
 }
 
-// Web Audio 增益：让音量上限从 100% 提升到 200%（HTMLMediaElement.volume 上限为 1）
-function initAudioGraph(el: HTMLMediaElement) {
+// Web Audio 增益：仅当音量 > 100% 才接管媒体流，避免日常播放受 autoplay 策略影响而静音
+function ensureGain(el: HTMLMediaElement) {
+  if (gainNode && boundEl === el) return;
   try {
-    audioCtx = audioCtx ?? new AudioContext();
+    audioCtx = audioCtx ?? new (window.AudioContext || (window as any).webkitAudioContext)();
     if (boundEl !== el) {
       const src = audioCtx.createMediaElementSource(el);
       gainNode = audioCtx.createGain();
@@ -150,7 +149,7 @@ function initAudioGraph(el: HTMLMediaElement) {
     }
     if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
   } catch {
-    // Web Audio 不可用时降级：音量上限保持 100%
+    // 增益不可用时降级：>100% 封顶为 100%（原生路径发声，保证有声）
     gainNode = null;
   }
 }
@@ -159,8 +158,16 @@ function applyVolume() {
   const el = mediaEl.value;
   if (!el) return;
   const v = volume.value;
-  el.volume = Math.min(v, 1);
-  if (gainNode) gainNode.gain.value = v > 1 ? v : 1;
+  if (v > 1) {
+    // 超过 100%：接管媒体流用增益放大
+    ensureGain(el);
+    el.volume = 1;
+    if (gainNode) gainNode.gain.value = v;
+  } else {
+    // 0~100%：走原生路径，绝不静音
+    el.volume = v;
+    if (gainNode) gainNode.gain.value = 1;
+  }
 }
 
 function flashVolumeOsd() {
@@ -173,8 +180,7 @@ function setVolume(v: number) {
   volume.value = Math.max(0, Math.min(2, v));
   const el = mediaEl.value;
   if (el) {
-    el.volume = Math.min(volume.value, 1);
-    if (gainNode) gainNode.gain.value = volume.value > 1 ? volume.value : 1;
+    applyVolume();
     if (volume.value > 0 && el.muted) el.muted = false;
   }
   if (audioCtx?.state === "suspended") audioCtx.resume().catch(() => {});
@@ -364,6 +370,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
 
         <Transition name="fade">
           <div v-if="showVolOsd" class="vol-osd">
+            <svg class="vol-osd-icon" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="M15 9.3a4 4 0 0 1 0 5.4"/></svg>
             <span class="vol-osd-num">{{ volumePct }}%</span>
           </div>
         </Transition>
@@ -423,25 +430,31 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
           </button>
         </div>
         <div class="btn-group">
-          <button class="ctl" :disabled="!item" :title="muted || volume === 0 ? '取消静音' : '静音'" @click="toggleMute">
-            <svg v-if="muted || volume === 0" width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="m16 9 6 6"/><path d="m22 9-6 6"/></svg>
-            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="M15 9.3a4 4 0 0 1 0 5.4"/></svg>
-          </button>
-          <div class="vol-ctl">
-            <span class="vol-pct">{{ volumePct }}%</span>
-            <div
-              class="vol-track"
-              ref="volTrack"
-              title="音量"
-              @pointerdown="onVolPointerDown"
-              @pointermove="onVolPointerMove"
-              @pointerup="onVolPointerUp"
-              @pointercancel="onVolPointerUp"
-              @wheel.prevent="onVolWheel"
-            >
-              <div class="vol-fill" :style="{ height: volFillPct + '%' }"></div>
-              <span v-for="t in volTicks" :key="t" class="vol-tick" :style="{ bottom: (t / 200 * 100) + '%' }"></span>
-            </div>
+          <div class="vol-wrap" @mouseenter="showVolPop = true" @mouseleave="showVolPop = false">
+            <button class="ctl" :disabled="!item" :title="muted || volume === 0 ? '取消静音' : '静音'" @click="toggleMute">
+              <svg v-if="muted || volume === 0" width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="m16 9 6 6"/><path d="m22 9-6 6"/></svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="M15 9.3a4 4 0 0 1 0 5.4"/></svg>
+            </button>
+            <Transition name="vol-pop">
+              <div v-if="showVolPop" class="vol-pop">
+                <div class="vol-ctl">
+                  <span class="vol-pct">{{ volumePct }}%</span>
+                  <div
+                    class="vol-track"
+                    ref="volTrack"
+                    title="音量"
+                    @pointerdown="onVolPointerDown"
+                    @pointermove="onVolPointerMove"
+                    @pointerup="onVolPointerUp"
+                    @pointercancel="onVolPointerUp"
+                    @wheel.prevent="onVolWheel"
+                  >
+                    <div class="vol-fill" :style="{ height: volFillPct + '%' }"></div>
+                    <span v-for="t in volTicks" :key="t" class="vol-tick" :style="{ bottom: (t / 100 * 100) + '%' }"></span>
+                  </div>
+                </div>
+              </div>
+            </Transition>
           </div>
           <button class="ctl" :disabled="!item" :title="isFullscreen ? '退出全屏' : '全屏'" @click="toggleFullscreen">
             <svg v-if="isFullscreen" width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>
@@ -741,12 +754,39 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
   stroke: var(--fg-2);
 }
 
+.vol-wrap {
+  position: relative;
+}
+
+.vol-pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 6px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.vol-pop-enter-active,
+.vol-pop-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.vol-pop-enter-from,
+.vol-pop-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(4px);
+}
+
 .vol-ctl {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 5px;
-  height: 92px;
+  height: 80px;
   justify-content: flex-end;
   padding: 0 4px;
 }
@@ -798,20 +838,25 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
   z-index: 30;
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(0, 0, 0, 0.55);
-  border-radius: 12px;
-  padding: 14px 22px;
+  gap: 7px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 9px;
+  padding: 7px 14px;
   pointer-events: none;
+}
+
+.vol-osd-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .vol-osd-num {
   color: #fff;
-  font-size: 30px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  letter-spacing: -0.01em;
+  line-height: 1;
 }
 
 .fade-enter-active,

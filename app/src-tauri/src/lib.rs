@@ -90,6 +90,13 @@ fn save_playback_position(id: i64, position_ms: i64, state: State<AppState>) -> 
     db.save_playback_position(id, position_ms).map_err(err_str)
 }
 
+/// 回写前端探测到的媒体时长（导入时未探测，由前端补齐）
+#[tauri::command]
+fn update_media_duration(id: i64, duration_ms: i64, state: State<AppState>) -> CmdResult<()> {
+    let db = state.db.lock().map_err(err_str)?;
+    db.update_media_duration(id, duration_ms).map_err(err_str)
+}
+
 /// 触发后台转写（立即返回，进度/结果走事件）
 #[tauri::command]
 fn transcribe_media(
@@ -188,6 +195,7 @@ pub fn run() {
             import_files,
             list_media,
             save_playback_position,
+            update_media_duration,
             transcribe_media,
             translate_media,
             get_subtitles,
