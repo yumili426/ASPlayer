@@ -33,12 +33,7 @@ const volTrack = ref<HTMLDivElement | null>(null);
 const showVolOsd = ref(false);
 const showVolPop = ref(false);
 let volOsdTimer: number | null = null;
-let audioCtx: AudioContext | null = null;
-let gainNode: GainNode | null = null;
-let boundEl: HTMLMediaElement | null = null;
 let volDragging = false;
-let gainReady = false;
-let gainAttempt = false;
 const rateSteps = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const rateText = computed(() => `${rate.value}x`);
 const volumePct = computed(() => Math.round(volume.value * 100));
@@ -89,7 +84,6 @@ watch(
 );
 
 watch(mediaEl, (el) => {
-  gainAttempt = false; // 媒体元素变化时允许重新尝试建立增益
   if (el) applyVolume();
 });
 
@@ -138,46 +132,12 @@ function prev() {
   if (prv) emit("play", prv);
 }
 
-// Web Audio 增益：仅当音量 > 100% 才考虑接管。关键：必须等 AudioContext 真正 running 才
-// createMediaElementSource，否则接管后若 ctx 处于 suspended 会整条静音（且不可逆）。
-async function ensureGain() {
-  if (gainAttempt) return; // 已尝试过接管（无论成败），避免重复触发
-  gainAttempt = true;
-  try {
-    audioCtx = audioCtx ?? new (window.AudioContext || (window as any).webkitAudioContext)();
-    if (audioCtx.state === "suspended") {
-      await audioCtx.resume();
-    }
-    // 无法激活则不接管：保持原生发声（此时音量封顶 100%，但绝不静音）
-    if (audioCtx.state !== "running" || !mediaEl.value) return;
-    if (boundEl !== mediaEl.value) {
-      const src = audioCtx.createMediaElementSource(mediaEl.value);
-      gainNode = audioCtx.createGain();
-      src.connect(gainNode);
-      gainNode.connect(audioCtx.destination);
-      boundEl = mediaEl.value;
-      gainReady = true;
-    }
-  } catch {
-    gainNode = null;
-    gainReady = false;
-  }
-}
-
 function applyVolume() {
   const el = mediaEl.value;
   if (!el) return;
-  const v = volume.value;
-  if (v > 1) {
-    // 原生音量已拉满到 100%，剩余部分交给增益（若已就绪）
-    el.volume = 1;
-    if (gainReady && gainNode) gainNode.gain.value = v;
-    else ensureGain(); // 异步尝试接管；期间保持 100% 发声，绝不静音
-  } else {
-    // 0~100%：走原生路径，保证有声
-    el.volume = v;
-    if (gainReady && gainNode) gainNode.gain.value = 1;
-  }
+  // 原生音量上限即 100%。Web Audio 增益在 Tauri WebView 下会造成整条静音且不可逆，
+  // 故移除增益方案，音量均走原生路径以保证始终发声。
+  el.volume = volume.value;
 }
 
 function flashVolumeOsd() {
@@ -187,10 +147,10 @@ function flashVolumeOsd() {
 }
 
 function setVolume(v: number) {
-  volume.value = Math.max(0, Math.min(2, v));
+  volume.value = Math.max(0, Math.min(1, v));
   const el = mediaEl.value;
   if (el) {
-    applyVolume();
+    el.volume = volume.value;
     if (volume.value > 0 && el.muted) el.muted = false;
   }
   flashVolumeOsd();
@@ -207,7 +167,6 @@ function adjustVolume(delta: number) {
 }
 
 function onVolumeChange() {
-  // 仅同步静音状态；音量超过 100% 由 gain 承载，不能回写 el.volume
   const el = mediaEl.value;
   if (!el) return;
   muted.value = el.muted;
@@ -215,8 +174,6 @@ function onVolumeChange() {
 
 function onPlay() {
   playing.value = true;
-  // 用户手势后恢复 AudioContext，避免 Web Audio 增益路径静音
-  if (audioCtx?.state === "suspended") audioCtx.resume().catch(() => {});
 }
 
 function onVolWheel(e: WheelEvent) {
@@ -779,6 +736,16 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 
+/* 透明连接区：占住按钮与浮层之间的空隙，避免鼠标移动时误触发 mouseleave */
+.vol-pop::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 8px;
+}
+
 .vol-pop-enter-active,
 .vol-pop-leave-active {
   transition: opacity 0.15s ease, transform 0.15s ease;
@@ -796,7 +763,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
   align-items: center;
   gap: 5px;
   width: 46px;
-  height: 80px;
+  height: 116px;
   justify-content: flex-end;
 }
 
