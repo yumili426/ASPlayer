@@ -1,30 +1,26 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import CaptionPanel from "./CaptionPanel.vue";
-import type { MediaItem, Subtitle } from "../types";
-import {
-  getSubtitles,
-  onTranscribeError,
-  onTranscribeProgress,
-  onTranscribeDone,
-  transcribeMedia,
-  translateMedia,
-} from "../api/subtitle";
+import type { MediaItem } from "../types";
+import { useSubtitle } from "../stores/subtitle";
+import { transcribeMedia, translateMedia } from "../api/subtitle";
+
+const sub = useSubtitle();
 
 const props = defineProps<{ item: MediaItem | null; items: MediaItem[] }>();
-const emit = defineEmits<{ import: []; play: [item: MediaItem]; settings: [] }>();
+const emit = defineEmits<{
+  import: [];
+  play: [item: MediaItem];
+  settings: [];
+  togglePlaylist: [];
+  toggleSubtitle: [];
+}>();
 
 const mediaEl = ref<HTMLVideoElement | HTMLAudioElement | null>(null);
 const playing = ref(false);
-const currentTime = ref(0);
 const duration = ref(0);
-
-const subtitles = ref<Subtitle[]>([]);
-const subStatus = ref<string>("none");
 const captionOn = ref(true);
-const unlisteners: (() => void)[] = [];
-let subCurrentId: number | null = null;
 
 const src = computed(() => (props.item ? convertFileSrc(props.item.path) : ""));
 
@@ -37,17 +33,6 @@ function fmt(t: number): string {
   const mm = String(m).padStart(2, "0");
   const ss = String(s).padStart(2, "0");
   return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
-}
-
-async function loadSubtitles(id: number) {
-  if (!id) return;
-  try {
-    subtitles.value = await getSubtitles(id);
-    subStatus.value = props.item?.subtitle_status ?? "none";
-    subCurrentId = id;
-  } catch {
-    subStatus.value = "none";
-  }
 }
 
 function restorePosition() {
@@ -63,26 +48,21 @@ watch(
   () => props.item?.id,
   (id) => {
     requestAnimationFrame(restorePosition);
-    if (id) loadSubtitles(id);
-    else {
-      subtitles.value = [];
-      subStatus.value = "none";
-    }
+    if (id) sub.load(id);
+    else sub.reset();
   }
 );
 
-let autoTranslate = false;
-
 async function doTranscribe(withTranslate: boolean) {
   if (!props.item) return;
-  autoTranslate = withTranslate;
-  subStatus.value = "transcribing";
+  sub.setStatus("transcribing", "transcribe", 0, "正在转写…");
+  if (withTranslate) sub.requestAutoTranslate(props.item.id);
   await transcribeMedia(props.item.id);
 }
 
 async function doTranslate() {
   if (!props.item) return;
-  subStatus.value = "translating";
+  sub.setStatus("translating", "translate", 0, "正在翻译…");
   await translateMedia(props.item.id);
 }
 
@@ -122,7 +102,7 @@ let lastSave = 0;
 function onTimeUpdate() {
   const el = mediaEl.value;
   if (!el || !props.item) return;
-  currentTime.value = el.currentTime;
+  sub.setTime(el.currentTime);
   const now = Date.now();
   if (now - lastSave > 3000) {
     lastSave = now;
@@ -136,40 +116,6 @@ function onTimeUpdate() {
       .catch(() => {});
   }
 }
-
-onMounted(async () => {
-  unlisteners.push(
-    await onTranscribeProgress((e) => {
-      if (e.mediaId !== subCurrentId) return;
-      if (e.stage === "transcribe") subStatus.value = "transcribing";
-      if (e.stage === "translate") subStatus.value = "translating";
-      if (e.stage === "done") subStatus.value = "done";
-    })
-  );
-  unlisteners.push(
-    await onTranscribeDone(async (mediaId) => {
-      if (mediaId !== subCurrentId) return;
-      subStatus.value = "done";
-      await loadSubtitles(mediaId);
-      if (autoTranslate) {
-        autoTranslate = false;
-        subStatus.value = "translating";
-        await translateMedia(mediaId);
-      }
-    })
-  );
-  unlisteners.push(
-    await onTranscribeError((msg) => {
-      subStatus.value = "error";
-      // eslint-disable-next-line no-console
-      console.error("transcribe error:", msg);
-    })
-  );
-});
-
-onUnmounted(() => {
-  unlisteners.forEach((u) => u());
-});
 </script>
 
 
@@ -178,11 +124,11 @@ onUnmounted(() => {
     <div class="stage-topbar">
       <span class="stage-title">ASPlayer</span>
       <div class="toolbar">
-        <button class="iconbtn" title="字幕" @click="captionOn = !captionOn" :class="{ active: captionOn }"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M11 10h6"/></svg></button>
+        <button class="iconbtn" title="播放列表面板" @click="emit('togglePlaylist')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
+        <button class="iconbtn" title="字幕面板" @click="emit('toggleSubtitle')" :class="{ active: captionOn }"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M11 10h6"/></svg></button>
         <button class="iconbtn" title="转写" @click="doTranscribe(false)" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10"/><path d="m8 9 4 4 4-4"/><path d="M4 17v2h16v-2"/></svg></button>
         <button class="iconbtn" title="转写并翻译" @click="doTranscribe(true)" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg></button>
         <button class="iconbtn" title="翻译" @click="doTranslate" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/></svg></button>
-        <button class="iconbtn" title="搜索" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg></button>
         <button class="iconbtn" title="设置" @click="emit('settings')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
       </div>
     </div>
@@ -190,9 +136,9 @@ onUnmounted(() => {
     <div class="canvas">
       <CaptionPanel
         v-if="captionOn && item"
-        :subtitles="subtitles"
-        :current-time="currentTime"
-        :status="subStatus"
+        :subtitles="sub.subtitles.value"
+        :current-time="sub.currentTime.value"
+        :status="sub.status.value"
       />
       <div v-if="!item" class="empty">
         <div class="empty-badge">
@@ -234,8 +180,8 @@ onUnmounted(() => {
 
     <div class="controls">
       <div class="seek-row">
-        <span class="time">{{ fmt(currentTime) }}</span>
-        <input class="slider" type="range" min="0" :max="duration || 0" step="0.1" :value="currentTime" :disabled="!item" @input="onSeekInput" />
+        <span class="time">{{ fmt(sub.currentTime.value) }}</span>
+        <input class="slider" type="range" min="0" :max="duration || 0" step="0.1" :value="sub.currentTime.value" :disabled="!item" @input="onSeekInput" />
         <span class="time">{{ fmt(duration) }}</span>
       </div>
       <div class="btn-row">

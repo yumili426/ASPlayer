@@ -1,16 +1,29 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import PlayerStage from "./components/PlayerStage.vue";
 import PlaylistPanel from "./components/PlaylistPanel.vue";
+import SubtitlePanel from "./components/SubtitlePanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import type { MediaItem } from "./types";
+import { useSubtitle } from "./stores/subtitle";
+import {
+  onTranscribeProgress,
+  onTranscribeDone,
+  onTranscribeError,
+  translateMedia,
+} from "./api/subtitle";
+
+const sub = useSubtitle();
 
 const items = ref<MediaItem[]>([]);
 const current = ref<MediaItem | null>(null);
 const loading = ref(false);
 const settingsOpen = ref(false);
 const theme = ref<"light" | "dark">("dark");
+const showPlaylist = ref(true);
+const showSubtitle = ref(true);
+const unlisteners: (() => void)[] = [];
 
 const THEME_KEY = "asplayer-theme-v2";
 const saved = (() => {
@@ -91,7 +104,51 @@ function play(item: MediaItem) {
   current.value = item;
 }
 
-refresh();
+// 字幕面板点击某行 → 跳转到对应时间
+function seekTo(t: number) {
+  const mediaEl = document.querySelector<HTMLMediaElement>(".canvas video, .canvas audio");
+  if (mediaEl) mediaEl.currentTime = t;
+}
+
+function togglePlaylist() {
+  showPlaylist.value = !showPlaylist.value;
+}
+
+function toggleSubtitle() {
+  showSubtitle.value = !showSubtitle.value;
+}
+
+onMounted(async () => {
+  const u1 = await onTranscribeProgress((e) => {
+    sub.setStatus(
+      e.stage === "done" ? "done" : e.stage === "translate" ? "translating" : "transcribing",
+      e.stage,
+      e.progress,
+      e.message
+    );
+  });
+  const u2 = await onTranscribeDone(async (mediaId) => {
+    sub.setStatus("done", "done", 100, "");
+    if (sub.currentId.value === mediaId) sub.load(mediaId);
+    // 若之前点了"转写并翻译"，转写完成后自动触发翻译
+    const auto = sub.consumeAutoTranslate();
+    if (auto != null && auto === mediaId) {
+      sub.setStatus("translating", "translate", 0, "正在翻译…");
+      await translateMedia(mediaId);
+    }
+  });
+  const u3 = await onTranscribeError((msg) => {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 转写/翻译错误:", msg);
+    sub.setStatus("error", "", 0, msg);
+  });
+  unlisteners.push(u1, u2, u3);
+  refresh();
+});
+
+onUnmounted(() => {
+  unlisteners.forEach((u) => u());
+});
 </script>
 
 <template>
@@ -102,8 +159,22 @@ refresh();
       @import="importFiles"
       @play="play"
       @settings="settingsOpen = true"
+      @toggle-playlist="togglePlaylist"
+      @toggle-subtitle="toggleSubtitle"
+    />
+    <SubtitlePanel
+      v-if="showSubtitle"
+      :subtitles="sub.subtitles.value"
+      :current-time="sub.currentTime.value"
+      :status="sub.status.value"
+      :stage="sub.stage.value"
+      :progress="sub.progress.value"
+      :message="sub.message.value"
+      @close="showSubtitle = false"
+      @seek="seekTo"
     />
     <PlaylistPanel
+      v-if="showPlaylist"
       :items="items"
       :current-id="current?.id ?? null"
       :loading="loading"
