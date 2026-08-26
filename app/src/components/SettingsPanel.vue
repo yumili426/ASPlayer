@@ -5,17 +5,46 @@ import { getSettings, saveSettings } from "../api/subtitle";
 const props = defineProps<{ open: boolean; theme: string }>();
 const emit = defineEmits<{ close: []; setTheme: [theme: "light" | "dark"] }>();
 
+interface Provider {
+  label: string;
+  base: string;
+  model: string;
+}
+
+// OpenAI 兼容服务商预设（选中后自动填 base + model，仍可手动改）
+const providers: Provider[] = [
+  { label: "DeepSeek", base: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  { label: "OpenAI", base: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+  { label: "通义千问 Qwen", base: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
+  { label: "智谱 GLM", base: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash" },
+  { label: "月之暗面 Kimi", base: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" },
+  { label: "本地 Ollama", base: "http://localhost:11434/v1", model: "llama3.1" },
+];
+
 const apiBase = ref("");
 const apiKey = ref("");
 const apiModel = ref("deepseek-chat");
+const providerIdx = ref(-1); // -1 = 自定义，不匹配任何预设
 const saving = ref(false);
+
+// 根据 base 反推当前匹配的预设（用于回显下拉）
+function matchProvider(base: string, model: string): number {
+  return providers.findIndex((p) => p.base === base && p.model === model);
+}
+
+function applyProvider(i: number) {
+  if (i < 0) return;
+  apiBase.value = providers[i].base;
+  apiModel.value = providers[i].model;
+}
 
 async function load() {
   try {
     const s = await getSettings();
-    apiBase.value = s.api_base ?? "https://api.deepseek.com/v1";
+    apiBase.value = s.api_base ?? "";
     apiKey.value = s.api_key ?? "";
-    apiModel.value = s.api_model ?? "deepseek-chat";
+    apiModel.value = s.api_model ?? "";
+    providerIdx.value = matchProvider(apiBase.value, apiModel.value);
   } catch {
     /* ignore */
   }
@@ -88,6 +117,17 @@ function onClick(e: MouseEvent) {
         <div class="section-label">翻译</div>
 
         <label class="field">
+          <span>服务商</span>
+          <select
+            :value="providerIdx"
+            @change="applyProvider(Number(($event.target as HTMLSelectElement).value))"
+          >
+            <option :value="-1">自定义</option>
+            <option v-for="(p, i) in providers" :key="i" :value="i">{{ p.label }}</option>
+          </select>
+        </label>
+
+        <label class="field">
           <span>API 地址</span>
           <input v-model="apiBase" type="text" placeholder="https://api.deepseek.com/v1" />
         </label>
@@ -102,7 +142,7 @@ function onClick(e: MouseEvent) {
           <input v-model="apiModel" type="text" placeholder="deepseek-chat" />
         </label>
 
-        <p class="hint">优先读取环境变量 ASPLAYER_API_BASE / ASPLAYER_API_KEY，其次用这里保存的值。</p>
+        <p class="hint">选择服务商可自动填入地址与模型，Model 仍可手改。兼容所有 OpenAI 接口。</p>
 
         <button class="save-btn" :disabled="saving" @click="onSave">
           {{ saving ? "保存中…" : "保存" }}
@@ -242,6 +282,22 @@ function onClick(e: MouseEvent) {
 .field input {
   width: 100%;
   font-size: 13px;
+}
+
+.field select {
+  width: 100%;
+  font-size: 13px;
+  color: var(--fg-1);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 12px;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a1a6' stroke-width='2'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
 }
 
 .hint {
