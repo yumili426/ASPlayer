@@ -49,7 +49,7 @@ function stageLabel() {
       <div class="sp-actions">
         <span v-if="subtitles.length" class="sp-count">{{ subtitles.length }} 段</span>
         <button class="sp-close" title="关闭字幕面板" @click="emit('close')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-1)" stroke-width="1.8"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
     </div>
@@ -112,7 +112,8 @@ function stageLabel() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: 0 16px;
+  min-height: 52px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -139,22 +140,24 @@ function stageLabel() {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
   border: none;
-  background: transparent;
-  color: var(--fg-2);
+  background: var(--bg-2);
+  color: var(--fg-1);
   border-radius: 7px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background 0.15s ease, filter 0.15s ease;
 }
 
 .sp-close:hover {
   background: var(--bg-2);
-  color: var(--fg-1);
+  filter: brightness(1.2);
 }
 
 .sp-close svg {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
+  stroke-width: 2;
 }
 
 /* 进度 */

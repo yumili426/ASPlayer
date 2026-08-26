@@ -181,6 +181,7 @@ onUnmounted(() => {
       @play="play"
       @import="importFolder"
       @refresh="refresh"
+      @close="showPlaylist = false"
     />
     <SettingsPanel
       :open="settingsOpen"

@@ -10,6 +10,7 @@ const emit = defineEmits<{
   play: [item: MediaItem];
   import: [];
   refresh: [];
+  close: [];
 }>();
 
 function fmtDuration(ms: number): string {
@@ -39,6 +40,9 @@ function fmtDuration(ms: number): string {
         </button>
         <button class="tool-btn" title="刷新" @click="emit('refresh')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg>
+        </button>
+        <button class="pl-close" title="关闭播放列表" @click="emit('close')">
+          <svg viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-1)" stroke-width="1.8"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
     </div>
@@ -81,7 +85,8 @@ function fmtDuration(ms: number): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: 0 16px;
+  min-height: 52px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -133,6 +138,33 @@ function fmtDuration(ms: number): string {
 .tool-btn svg {
   width: 15px;
   height: 15px;
+}
+
+.pl-close {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: var(--bg-2);
+  color: var(--fg-1);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s ease, filter 0.15s ease;
+}
+
+.pl-close:hover {
+  background: var(--bg-2);
+  filter: brightness(1.2);
+}
+
+.pl-close svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2;
 }
 
 .pl-scroll {

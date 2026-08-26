@@ -222,7 +222,8 @@ function onTimeUpdate() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
+  padding: 0 16px;
+  min-height: 52px;
   background: var(--bg-1);
   border-bottom: 1px solid var(--line);
 }
