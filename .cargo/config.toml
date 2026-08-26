@@ -1,0 +1,8 @@
+[env]
+# whisper-rs-sys 的 bindgen 需要 libclang，固化 LIBCLANG_PATH（M0 环境脚本解压的位置）
+LIBCLANG_PATH = "C:/Users/Yumili/AppData/Local/Temp/clang+llvm-18.1.8-x86_64-pc-windows-msvc/bin"
+
+# whisper.cpp 源码含 UTF-8 字符（♪ 等），中文 Windows 上 MSVC 默认按 GBK 解读会报错，
+# 必须强制 /utf-8（M0 已确认此修复）。
+CFLAGS = "/utf-8"
+CXXFLAGS = "/utf-8"
