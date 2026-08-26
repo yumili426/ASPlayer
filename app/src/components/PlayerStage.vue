@@ -98,6 +98,28 @@ function prev() {
   if (prv) emit("play", prv);
 }
 
+function toggleMute() {
+  const el = mediaEl.value;
+  if (!el) return;
+  el.muted = !el.muted;
+}
+
+function adjustVolume(delta: number) {
+  const el = mediaEl.value;
+  if (!el) return;
+  el.volume = Math.max(0, Math.min(1, (el.volume || 1) + delta));
+}
+
+function toggleFullscreen() {
+  const el = mediaEl.value;
+  if (!el) return;
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  } else if (el.requestFullscreen) {
+    el.requestFullscreen();
+  }
+}
+
 let lastSave = 0;
 function onTimeUpdate() {
   const el = mediaEl.value;
@@ -116,6 +138,8 @@ function onTimeUpdate() {
       .catch(() => {});
   }
 }
+
+defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleFullscreen });
 </script>
 
 

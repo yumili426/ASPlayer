@@ -2,6 +2,10 @@
 import { ref, watch } from "vue";
 import { getSettings, saveSettings } from "../api/subtitle";
 import { useCaptionStyle } from "../stores/captionStyle";
+import { useShortcuts } from "../stores/shortcuts";
+import type { ShortcutActionName } from "../types";
+
+type TabKey = "appearance" | "subtitle" | "translate" | "shortcuts";
 
 const props = defineProps<{ open: boolean; theme: string }>();
 const emit = defineEmits<{ close: []; setTheme: [theme: "light" | "dark"] }>();
@@ -43,6 +47,49 @@ const capColors = [
 function onCaptionColor(e: Event) {
   captionStyle.color = (e.target as HTMLInputElement).value;
 }
+
+const activeTab = ref<TabKey>("appearance");
+const tabs: { key: TabKey; label: string }[] = [
+  { key: "appearance", label: "外观" },
+  { key: "subtitle", label: "字幕" },
+  { key: "translate", label: "翻译" },
+  { key: "shortcuts", label: "快捷键" },
+];
+
+const sc = useShortcuts();
+
+function keysOf(action: ShortcutActionName): string {
+  return sc.shortcuts.value.find((s) => s.action === action)?.keys ?? "";
+}
+
+function startRecord(action: ShortcutActionName) {
+  sc.recording.value = action;
+}
+
+function cancelRecord() {
+  sc.recording.value = null;
+}
+
+let recHandler: ((e: KeyboardEvent) => void) | null = null;
+watch(sc.recording, (action) => {
+  if (recHandler) {
+    window.removeEventListener("keydown", recHandler, true);
+    recHandler = null;
+  }
+  if (action) {
+    recHandler = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        cancelRecord();
+        return;
+      }
+      sc.setShortcut(action, sc.normalizeKey(e));
+      cancelRecord();
+    };
+    window.addEventListener("keydown", recHandler, true);
+  }
+});
 
 // 根据 base 反推当前匹配的预设（用于回显下拉）
 function matchProvider(base: string, model: string): number {
@@ -100,11 +147,25 @@ function onClick(e: MouseEvent) {
       <div class="head">
         <span class="title">设置</span>
         <button class="close-btn" title="关闭" @click="emit('close')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-1)" stroke-width="1.8"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
 
-      <div class="section">
+      <div class="body">
+        <nav class="nav">
+          <button
+            v-for="t in tabs"
+            :key="t.key"
+            class="tab"
+            :class="{ active: activeTab === t.key }"
+            @click="activeTab = t.key"
+          >
+            {{ t.label }}
+          </button>
+        </nav>
+        <div class="content">
+
+      <div class="section" v-show="activeTab === 'appearance'">
         <div class="section-label">外观</div>
 
         <div class="row">
@@ -130,7 +191,7 @@ function onClick(e: MouseEvent) {
         </div>
       </div>
 
-      <div class="section">
+      <div class="section" v-show="activeTab === 'subtitle'">
         <div class="section-label">字幕</div>
 
         <label class="field">
@@ -220,7 +281,30 @@ function onClick(e: MouseEvent) {
         <button class="rs-btn" @click="cap.resetCaptionStyle()">重置默认</button>
       </div>
 
-      <div class="section">
+      <div class="section" v-show="activeTab === 'shortcuts'">
+        <div class="section-label">快捷键</div>
+        <p class="hint">点击某项后按下新的组合键即可更换；按 Esc 取消录制。</p>
+        <div class="sc-list">
+          <div v-for="a in sc.shortcutActions" :key="a.name" class="sc-item">
+            <span class="sc-label">{{ a.label }}</span>
+            <span class="sc-controls">
+              <button
+                class="sc-key"
+                :class="{ rec: sc.recording.value === a.name }"
+                @click="startRecord(a.name)"
+              >
+                {{ sc.keysLabel(keysOf(a.name)) }}
+              </button>
+              <button class="sc-clear" title="清除" @click="sc.clearShortcut(a.name)">
+                ×
+              </button>
+            </span>
+          </div>
+        </div>
+        <button class="rs-btn" @click="sc.resetShortcuts()">重置默认快捷键</button>
+      </div>
+
+      <div class="section" v-show="activeTab === 'translate'">
         <div class="section-label">翻译</div>
 
         <label class="field">
@@ -257,6 +341,8 @@ function onClick(e: MouseEvent) {
       </div>
 
       <div class="foot-hint">更多设置项将在后续里程碑加入（快捷键、字幕样式等）</div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -529,5 +615,208 @@ function onClick(e: MouseEvent) {
   color: var(--fg-3);
   border-top: 1px solid var(--line);
   padding-top: 12px;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 16px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab {
+  flex: 1;
+  padding: 8px 0;
+  border: none;
+  background: transparent;
+  color: var(--fg-2);
+  font-size: 13px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tab:hover {
+  background: var(--bg-2);
+  color: var(--fg-1);
+}
+
+.tab.active {
+  background: var(--bg-2);
+  color: var(--fg-1);
+  font-weight: 600;
+}
+
+.sc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sc-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg-2);
+  border-radius: 9px;
+}
+
+.sc-label {
+  font-size: 13px;
+  color: var(--fg-1);
+}
+
+.sc-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sc-key {
+  min-width: 96px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg-1);
+  color: var(--fg-1);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.sc-key:hover {
+  border-color: var(--accent);
+}
+
+.sc-key.rec {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent);
+  animation: sc-pulse 1s ease-in-out infinite;
+}
+
+.sc-clear {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-3);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.sc-clear:hover {
+  background: var(--bg-2);
+  color: var(--fg-1);
+}
+
+@keyframes sc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* 弹窗居中覆盖 */
+.overlay {
+  align-items: center;
+  justify-content: center;
+}
+
+.sheet {
+  margin: 0;
+  width: min(520px, calc(100vw - 48px));
+  max-height: min(82vh, 760px);
+  overflow-y: auto;
+}
+
+.body {
+  display: flex;
+  gap: 0;
+}
+
+.nav {
+  width: 116px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-right: 1px solid var(--line);
+  padding-right: 12px;
+}
+
+.nav .tab {
+  flex: 0 0 auto;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 7px;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+  padding-left: 14px;
+}
+
+.section {
+  border-top: none;
+  padding-top: 0;
+}
+
+.close-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: var(--bg-2);
+  color: var(--fg-1);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, filter 0.15s ease;
+}
+
+.close-btn:hover {
+  background: var(--bg-2);
+  filter: brightness(1.2);
+}
+
+.close-btn svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2;
+}
+
+.sheet {
+  height: min(480px, 82vh);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 </style>

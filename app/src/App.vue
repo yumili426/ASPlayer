@@ -7,6 +7,7 @@ import SubtitlePanel from "./components/SubtitlePanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import type { MediaItem } from "./types";
 import { useSubtitle } from "./stores/subtitle";
+import { useShortcuts } from "./stores/shortcuts";
 import {
   onTranscribeProgress,
   onTranscribeDone,
@@ -24,6 +25,7 @@ const theme = ref<"light" | "dark">("dark");
 const showPlaylist = ref(true);
 const showSubtitle = ref(true);
 const unlisteners: (() => void)[] = [];
+const stageRef = ref<any>(null);
 
 const THEME_KEY = "asplayer-theme-v2";
 const saved = (() => {
@@ -110,6 +112,80 @@ function seekTo(t: number) {
   if (mediaEl) mediaEl.currentTime = t;
 }
 
+// 快捷键：播放控制 / 面板开关 / 字幕跳转
+function isEditableTarget(e: KeyboardEvent): boolean {
+  const t = e.target as HTMLElement | null;
+  if (!t) return false;
+  const tag = t.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable;
+}
+
+const sc = useShortcuts();
+
+function seekToSubtitle(dir: 1 | -1) {
+  const list = sub.subtitles.value;
+  if (!list.length) return;
+  const t = sub.currentTime.value * 1000;
+  let idx = list.findIndex((s) => t >= s.start_ms && t < s.end_ms);
+  if (idx === -1) idx = list.findIndex((s) => s.start_ms > t);
+  if (idx === -1) idx = list.length - 1;
+  const nxt = idx + dir;
+  if (nxt < 0 || nxt >= list.length) return;
+  seekTo(list[nxt].start_ms / 1000);
+}
+
+function onKeydown(e: KeyboardEvent) {
+  // 正在录制快捷键时，忽略全局快捷键
+  if (sc.recording.value) return;
+  if (e.key === "Escape") {
+    if (settingsOpen.value) settingsOpen.value = false;
+    return;
+  }
+  if (isEditableTarget(e)) return;
+  const keys = sc.normalizeKey(e);
+  const binding = sc.shortcuts.value.find((s) => s.keys === keys);
+  if (!binding) return;
+  e.preventDefault();
+  switch (binding.action) {
+    case "togglePlay":
+      stageRef.value?.togglePlay();
+      break;
+    case "seekBack":
+      stageRef.value?.seekBy(-15);
+      break;
+    case "seekForward":
+      stageRef.value?.seekBy(15);
+      break;
+    case "volumeUp":
+      stageRef.value?.adjustVolume(0.1);
+      break;
+    case "volumeDown":
+      stageRef.value?.adjustVolume(-0.1);
+      break;
+    case "mute":
+      stageRef.value?.toggleMute();
+      break;
+    case "fullscreen":
+      stageRef.value?.toggleFullscreen();
+      break;
+    case "nextSubtitle":
+      seekToSubtitle(1);
+      break;
+    case "prevSubtitle":
+      seekToSubtitle(-1);
+      break;
+    case "togglePlaylist":
+      togglePlaylist();
+      break;
+    case "toggleSubtitle":
+      toggleSubtitle();
+      break;
+    case "openSettings":
+      settingsOpen.value = true;
+      break;
+  }
+}
+
 function togglePlaylist() {
   showPlaylist.value = !showPlaylist.value;
 }
@@ -143,17 +219,20 @@ onMounted(async () => {
     sub.setStatus("error", "", 0, msg);
   });
   unlisteners.push(u1, u2, u3);
+  window.addEventListener("keydown", onKeydown);
   refresh();
 });
 
 onUnmounted(() => {
   unlisteners.forEach((u) => u());
+  window.removeEventListener("keydown", onKeydown);
 });
 </script>
 
 <template>
   <div class="app-layout">
     <PlayerStage
+      ref="stageRef"
       :item="current"
       :items="items"
       @import="importFiles"

@@ -33,3 +33,22 @@ export interface CaptionStyle {
   bgOpacity: number; // 0 ~ 0.85 背景不透明度
   position: CaptionPosition; // 字幕位置
 }
+
+export type ShortcutActionName =
+  | "togglePlay"
+  | "seekBack"
+  | "seekForward"
+  | "volumeUp"
+  | "volumeDown"
+  | "mute"
+  | "fullscreen"
+  | "nextSubtitle"
+  | "prevSubtitle"
+  | "togglePlaylist"
+  | "toggleSubtitle"
+  | "openSettings";
+
+export interface ShortcutBinding {
+  action: ShortcutActionName;
+  keys: string; // normalize 后的组合，如 "Space"、"ArrowLeft"、"Mod+KeyL"、"KeyJ"
+}
