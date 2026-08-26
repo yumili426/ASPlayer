@@ -1,0 +1,104 @@
+/*
+ * ASPlayer · Quiet Glass 设计令牌
+ * 全部颜色经由 CSS 变量，禁止在组件中写死色值。
+ * data-theme="dark" | "light" 挂载在 <html> 上。
+ */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* 背景阶梯 */
+  --bg-0: #0d0d0f;          /* 窗口底 */
+  --bg-1: #1c1c1e;          /* 卡片 */
+  --bg-2: #2c2c2e;          /* 浮层 / hover */
+  --bg-glass: rgba(28, 28, 30, 0.72);   /* 弹层毛玻璃底 */
+
+  /* 前景阶梯 */
+  --fg-1: #f5f5f7;          /* 主文本 */
+  --fg-2: #a1a1a6;          /* 次级文本 */
+  --fg-3: #636366;          /* 弱化 / 占位 */
+
+  /* 强调色：低饱和暖琥珀，仅用于播放态/进度/选中 */
+  --accent: #e8a870;
+  --accent-dim: rgba(232, 168, 112, 0.16);
+
+  /* 边框与分割 */
+  --line: rgba(255, 255, 255, 0.08);
+
+  /* 圆角与阴影 */
+  --radius-card: 14px;
+  --radius-pill: 999px;
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-0: #f5f5f7;
+  --bg-1: #ffffff;
+  --bg-2: #ececed;
+  --bg-glass: rgba(255, 255, 255, 0.78);
+
+  --fg-1: #1d1d1f;
+  --fg-2: #6e6e73;
+  --fg-3: #aeaeb2;
+
+  --accent: #c97b3d;
+  --accent-dim: rgba(201, 123, 61, 0.14);
+
+  --line: rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+/* ---- 全局基础 ---- */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--bg-0);
+  color: var(--fg-1);
+  font-family:
+    "HarmonyOS Sans SC", "MiSans", "Segoe UI Variable", "Segoe UI",
+    "Microsoft YaHei", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: background 200ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+button:hover {
+  filter: brightness(1.15);
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+input {
+  font-family: inherit;
+  color: var(--fg-1);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 12px;
+  outline: none;
+}
