@@ -18,6 +18,30 @@ fn err_str<E: std::fmt::Display>(e: E) -> String {
     format!("{e}")
 }
 
+/// 定位 ffmpeg 并写入 ASPLAYER_FFMPEG，供转写管线（asplayer-transcribe）复用。
+/// 若环境变量已设置则保持不变；否则按候选相对位置查找 tools/ffmpeg.exe。
+fn resolve_ffmpeg() {
+    use std::path::{Path, PathBuf};
+    if std::env::var("ASPLAYER_FFMPEG").map(|s| !s.trim().is_empty()).unwrap_or(false) {
+        return;
+    }
+    let candidates: Vec<PathBuf> = vec![
+        PathBuf::from("tools/ffmpeg.exe"),
+        PathBuf::from("../tools/ffmpeg.exe"),
+        PathBuf::from("../../tools/ffmpeg.exe"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/ffmpeg.exe"),
+    ];
+    for c in candidates {
+        if c.is_file() {
+            if let Ok(abs) = std::fs::canonicalize(&c) {
+                // 幂等设置环境变量
+                let _ = std::env::set_var("ASPLAYER_FFMPEG", &abs);
+            }
+            return;
+        }
+    }
+}
+
 #[tauri::command]
 fn import_folder(path: String, state: State<AppState>) -> CmdResult<Vec<media::MediaItem>> {
     let files = media::scan_media_files(std::path::Path::new(&path)).map_err(err_str)?;
@@ -129,6 +153,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            resolve_ffmpeg();
             let dir: PathBuf = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let db = MediaDb::open(&dir.join("asplayer.db"))?;
