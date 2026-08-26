@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import { ref } from "vue";
+import LibraryView from "./components/LibraryView.vue";
+import PlayerView from "./components/PlayerView.vue";
+import type { MediaItem } from "./types";
+
+const current = ref<MediaItem | null>(null);
+
 function toggleTheme() {
   const next =
     document.documentElement.dataset.theme === "dark" ? "light" : "dark";
@@ -10,14 +17,15 @@ function toggleTheme() {
 <template>
   <div class="shell">
     <header class="topbar">
-      <span class="brand">ASPlayer</span>
+      <span class="brand" @click="current = null">ASPlayer</span>
       <div class="topbar-actions">
         <button class="ghost" title="切换主题" @click="toggleTheme">◐</button>
         <button class="ghost" title="设置">⚙</button>
       </div>
     </header>
     <main class="content">
-      <p class="placeholder-text">媒体库即将到来（M1 Task 4）…</p>
+      <PlayerView v-if="current" :item="current" @back="current = null" />
+      <LibraryView v-else @play="(m: MediaItem) => (current = m)" />
     </main>
   </div>
 </template>
@@ -41,6 +49,7 @@ function toggleTheme() {
   font-size: 16px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  cursor: pointer;
 }
 
 .topbar-actions {
@@ -57,12 +66,7 @@ function toggleTheme() {
 
 .content {
   flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.placeholder-text {
-  color: var(--fg-3);
+  overflow: hidden;
 }
 </style>
+
