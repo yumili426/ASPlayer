@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { computed, ref } from "vue";
 import type { MediaItem } from "../types";
 
-defineProps<{
+const props = defineProps<{
   items: MediaItem[];
   currentId: number | null;
   loading: boolean;
@@ -12,6 +13,30 @@ const emit = defineEmits<{
   refresh: [];
   close: [];
 }>();
+
+const search = ref("");
+const sortBy = ref<"added" | "title" | "duration" | "subtitle">("added");
+
+const sortedItems = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  let list = props.items;
+  if (q) list = list.filter((m) => m.title.toLowerCase().includes(q));
+  const arr = [...list];
+  switch (sortBy.value) {
+    case "title":
+      arr.sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
+      break;
+    case "duration":
+      arr.sort((a, b) => b.duration_ms - a.duration_ms);
+      break;
+    case "subtitle":
+      arr.sort((a, b) => b.subtitle_count - a.subtitle_count);
+      break;
+    default:
+      arr.sort((a, b) => a.id - b.id);
+  }
+  return arr;
+});
 
 function fmtDuration(ms: number): string {
   if (!ms) return "00:00";
@@ -31,7 +56,7 @@ function fmtDuration(ms: number): string {
     <div class="pl-head">
       <div class="pl-head-left">
         <span class="pl-title">播放列表</span>
-        <span class="pl-count">{{ loading ? "…" : `${items.length} 个` }}</span>
+        <span class="pl-count">{{ loading ? "…" : `${sortedItems.length} 个` }}</span>
       </div>
       <div class="pl-actions">
         <button class="tool-btn" title="导入" @click="emit('import')">
@@ -47,15 +72,31 @@ function fmtDuration(ms: number): string {
       </div>
     </div>
 
+    <!-- 搜索与排序 -->
+    <div class="pl-tools">
+      <input v-model="search" class="pl-search" type="text" placeholder="搜索标题…" />
+      <select v-model="sortBy" class="pl-sort">
+        <option value="added">默认</option>
+        <option value="title">标题</option>
+        <option value="duration">时长</option>
+        <option value="subtitle">字幕数</option>
+      </select>
+    </div>
+
     <!-- 空态 / 列表 -->
     <div v-if="items.length === 0" class="pl-empty">
       <p>媒体库还是空的</p>
       <p class="pl-empty-sub">点击右上角 ＋ 导入媒体文件夹</p>
     </div>
 
+    <div v-else-if="sortedItems.length === 0" class="pl-empty">
+      <p>无匹配结果</p>
+      <p class="pl-empty-sub">换个关键词试试</p>
+    </div>
+
     <div v-else class="pl-scroll">
       <div
-        v-for="(item, i) in items"
+        v-for="(item, i) in sortedItems"
         :key="item.id"
         class="pl-item"
         :class="{ active: item.id === currentId }"
@@ -165,6 +206,46 @@ function fmtDuration(ms: number): string {
   width: 15px;
   height: 15px;
   stroke-width: 2;
+}
+
+.pl-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.pl-search {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-2);
+  color: var(--fg-1);
+  outline: none;
+}
+
+.pl-search::placeholder {
+  color: var(--fg-3);
+}
+
+.pl-search:focus {
+  border-color: var(--accent);
+}
+
+.pl-sort {
+  flex-shrink: 0;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-2);
+  color: var(--fg-1);
+  outline: none;
+  cursor: pointer;
 }
 
 .pl-scroll {
