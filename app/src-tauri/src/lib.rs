@@ -147,6 +147,29 @@ fn get_settings(state: State<AppState>) -> CmdResult<std::collections::HashMap<S
     Ok(rows.into_iter().collect())
 }
 
+/// 读取翻译 API 环境变量配置（运行时优先于设置表）
+#[derive(serde::Serialize)]
+struct EnvApiConfig {
+    base: String,
+    key: String,
+    model: String,
+}
+
+#[tauri::command]
+fn get_env_api_config() -> EnvApiConfig {
+    fn val(name: &str) -> String {
+        std::env::var(name)
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_default()
+    }
+    EnvApiConfig {
+        base: val("ASPLAYER_API_BASE"),
+        key: val("ASPLAYER_API_KEY"),
+        model: val("ASPLAYER_API_MODEL"),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -170,7 +193,8 @@ pub fn run() {
             get_subtitles,
             get_subtitle_status,
             save_settings,
-            get_settings
+            get_settings,
+            get_env_api_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -26,6 +26,16 @@ export function getSettings(): Promise<Record<string, string>> {
   return invoke<Record<string, string>>("get_settings");
 }
 
+export interface ApiEnvInfo {
+  base: string;
+  key: string;
+  model: string;
+}
+
+export function getEnvApiConfig(): Promise<ApiEnvInfo> {
+  return invoke<ApiEnvInfo>("get_env_api_config");
+}
+
 export function onTranscribeProgress(
   cb: (e: ProgressEvent) => void
 ): Promise<UnlistenFn> {
