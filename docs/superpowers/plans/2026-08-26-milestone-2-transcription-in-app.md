@@ -18,32 +18,32 @@
 ---
 
 ## Task 1: 转写 crate 暴露可复用 API
-- [ ] 确认 `asplayer-transcribe` 的 `lib.rs` 已 `pub mod audio/whisper/translate/srt`
-- [ ] 在 `app/src-tauri/Cargo.toml` 添加路径依赖 `asplayer-transcribe = { path = "../../crates/asplayer-transcribe" }`
-- [ ] 确认 libclang / /utf-8 编译环境（根 `.cargo/config.toml` 或在 m0-env.ps1 中已被 `/utf-8` 覆盖）
-- [ ] `cargo check` 于 app 通过（验证依赖能被 app 复用）→ Commit
+- [x] 确认 `asplayer-transcribe` 的 `lib.rs` 已 `pub mod audio/whisper/translate/srt`
+- [x] 在 `app/src-tauri/Cargo.toml` 添加路径依赖 `asplayer-transcribe = { path = "../../crates/asplayer-transcribe" }`
+- [x] 确认 libclang / /utf-8 编译环境（新建 `.cargo/config.toml` 固化 LIBCLANG_PATH + /utf-8）
+- [x] `cargo check` 于 app 通过（验证依赖能被 app 复用）→ Commit
 
 ## Task 2: 数据库扩展（TDD）
-- [ ] db.rs 新增 `subtitles` 表 + `settings` 表 + media_files 增列
-- [ ] 方法：`save_subtitles(media_id, &[Segment])`、`get_subtitles(media_id)`、`set_subtitle(media_id, seg)`（单段 upsert，便于进度续写）、`save_setting/get_setting`、`set_subtitle_status(media_id, status)`
-- [ ] 单测：插入/读取字幕往返、settings 往返 → `cargo test` 通过 → Commit
+- [x] db.rs 新增 `subtitles` 表 + `settings` 表 + media_files 增列
+- [x] 方法：`save_subtitles`、`get_subtitles`、`set_subtitle`、`save_setting/get_setting`、`set_subtitle_status`
+- [x] 单测：插入/读取字幕往返、settings 往返 → `cargo test` 通过 → Commit
 
 ## Task 3: 转写后台任务（lib.rs）
-- [ ] `AppState` 扩展：持有 model 路径等配置
-- [ ] `transcribe_media(id, state, app: AppHandle)`：spawn 线程 → 调 `audio::extract_wav + read_samples_f32 + whisper::transcribe` → 写库 → emit `transcribe://done`；每批进度 emit `transcribe://progress`
-- [ ] `translate_media(id, state, app)`：spawn → 读未翻译段 → `translate::translate_segments` → 更新库 → emit
-- [ ] `get_subtitles(id) -> Vec<Subtitle>`、`get_subtitle_status(id)`
-- [ ] `save_settings/get_settings`
-- [ ] 编译通过 → Commit
+- [x] `AppState` 扩展：db 用 `Arc<Mutex<MediaDb>>` 便于后台线程共享
+- [x] `transcribe_media(id)`：spawn 线程 → 抽音轨 → whisper → 写库 → emit 事件
+- [x] `translate_media(id)`：spawn → 读未翻译段 → 批量翻译 → 回写 → emit
+- [x] `get_subtitles(id)`、`get_subtitle_status`、`save_settings/get_settings`
+- [x] 编译通过 → Commit
 
 ## Task 4: 前端字幕模型与类型
-- [ ] types.ts 新增 `Subtitle { start_ms, end_ms, text, translation }`、`SubtitleStatus`
-- [ ] 前端 API 封装 `subtitle.ts`（invoke + 监听事件）
+- [x] types.ts 新增 `Subtitle`、`ProgressEvent`、MediaItem 扩展
+- [x] 前端 API 封装 `subtitle.ts`（invoke + 监听事件）
 
 ## Task 5: 字幕面板 UI
-- [ ] 新组件 `CaptionPanel.vue`：按 `currentTime` 高亮当前段，显示双语，失败/无字幕态
-- [ ] PlayerStage 接入：播放中 `@timeupdate` 驱动高亮；工具栏"字幕"按钮切换显示
-- [ ] 主界面：选中媒体后出现"转写/翻译"操作（根据 subtitle_status）
+- [x] 新组件 `CaptionPanel.vue`：按 currentTime 高亮当前段、双语、空态/失败态
+- [x] PlayerStage 接入：工具栏加 转写/转写+翻译/翻译 按钮，播放中驱动高亮
+- [x] PlaylistPanel 显示"字"徽标（字幕段数）
+- [x] SettingsPanel 加 API 配置（base/key/model）
 
 ## Task 6: 端到端验证
 - [ ] `npm run tauri dev` 用真实样本：导入 → 播放 → 触发转写 → 事件进度 → 完成显示双语字幕 → 触发翻译

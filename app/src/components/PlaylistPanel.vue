@@ -59,6 +59,7 @@ function fmtDuration(ms: number): string {
       >
         <span class="pl-num">{{ item.id === currentId ? "▶" : i + 1 }}</span>
         <span class="pl-name">{{ item.title }}</span>
+        <span v-if="item.subtitle_count > 0" class="pl-sub" :title="`${item.subtitle_count} 段字幕`">字</span>
         <span class="pl-dur">{{ fmtDuration(item.duration_ms) }}</span>
       </div>
     </div>
@@ -203,5 +204,17 @@ function fmtDuration(ms: number): string {
   font-size: 12px;
   color: var(--fg-3);
   font-variant-numeric: tabular-nums;
+}
+
+.pl-sub {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-radius: 4px;
+  padding: 1px 4px;
+  line-height: 1.3;
+  margin-left: auto;
+  margin-right: 6px;
 }
 </style>

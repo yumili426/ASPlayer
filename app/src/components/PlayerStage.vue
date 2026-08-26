@@ -1,7 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import type { MediaItem } from "../types";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import CaptionPanel from "./CaptionPanel.vue";
+import type { MediaItem, Subtitle } from "../types";
+import {
+  getSubtitles,
+  onTranscribeError,
+  onTranscribeProgress,
+  onTranscribeDone,
+  transcribeMedia,
+  translateMedia,
+} from "../api/subtitle";
 
 const props = defineProps<{ item: MediaItem | null; items: MediaItem[] }>();
 const emit = defineEmits<{ import: []; play: [item: MediaItem]; settings: [] }>();
@@ -10,6 +19,12 @@ const mediaEl = ref<HTMLVideoElement | HTMLAudioElement | null>(null);
 const playing = ref(false);
 const currentTime = ref(0);
 const duration = ref(0);
+
+const subtitles = ref<Subtitle[]>([]);
+const subStatus = ref<string>("none");
+const captionOn = ref(true);
+const unlisteners: (() => void)[] = [];
+let subCurrentId: number | null = null;
 
 const src = computed(() => (props.item ? convertFileSrc(props.item.path) : ""));
 
@@ -24,6 +39,17 @@ function fmt(t: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
 }
 
+async function loadSubtitles(id: number) {
+  if (!id) return;
+  try {
+    subtitles.value = await getSubtitles(id);
+    subStatus.value = props.item?.subtitle_status ?? "none";
+    subCurrentId = id;
+  } catch {
+    subStatus.value = "none";
+  }
+}
+
 function restorePosition() {
   const el = mediaEl.value;
   if (!el || !props.item) return;
@@ -35,8 +61,30 @@ function restorePosition() {
 onMounted(restorePosition);
 watch(
   () => props.item?.id,
-  () => requestAnimationFrame(restorePosition)
+  (id) => {
+    requestAnimationFrame(restorePosition);
+    if (id) loadSubtitles(id);
+    else {
+      subtitles.value = [];
+      subStatus.value = "none";
+    }
+  }
 );
+
+let autoTranslate = false;
+
+async function doTranscribe(withTranslate: boolean) {
+  if (!props.item) return;
+  autoTranslate = withTranslate;
+  subStatus.value = "transcribing";
+  await transcribeMedia(props.item.id);
+}
+
+async function doTranslate() {
+  if (!props.item) return;
+  subStatus.value = "translating";
+  await translateMedia(props.item.id);
+}
 
 function togglePlay() {
   const el = mediaEl.value;
@@ -78,28 +126,74 @@ function onTimeUpdate() {
   const now = Date.now();
   if (now - lastSave > 3000) {
     lastSave = now;
-    invoke("save_playback_position", {
-      id: props.item.id,
-      positionMs: Math.round(el.currentTime * 1000),
-    }).catch(() => {});
+    import("@tauri-apps/api/core")
+      .then(({ invoke }) =>
+        invoke("save_playback_position", {
+          id: props.item!.id,
+          positionMs: Math.round(el.currentTime * 1000),
+        })
+      )
+      .catch(() => {});
   }
 }
+
+onMounted(async () => {
+  unlisteners.push(
+    await onTranscribeProgress((e) => {
+      if (e.mediaId !== subCurrentId) return;
+      if (e.stage === "transcribe") subStatus.value = "transcribing";
+      if (e.stage === "translate") subStatus.value = "translating";
+      if (e.stage === "done") subStatus.value = "done";
+    })
+  );
+  unlisteners.push(
+    await onTranscribeDone(async (mediaId) => {
+      if (mediaId !== subCurrentId) return;
+      subStatus.value = "done";
+      await loadSubtitles(mediaId);
+      if (autoTranslate) {
+        autoTranslate = false;
+        subStatus.value = "translating";
+        await translateMedia(mediaId);
+      }
+    })
+  );
+  unlisteners.push(
+    await onTranscribeError((msg) => {
+      subStatus.value = "error";
+      // eslint-disable-next-line no-console
+      console.error("transcribe error:", msg);
+    })
+  );
+});
+
+onUnmounted(() => {
+  unlisteners.forEach((u) => u());
+});
 </script>
+
 
 <template>
   <main class="stage">
     <div class="stage-topbar">
       <span class="stage-title">ASPlayer</span>
       <div class="toolbar">
-        <button class="iconbtn" title="字幕"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M11 10h6"/></svg></button>
-        <button class="iconbtn" title="翻译"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg></button>
-        <button class="iconbtn" title="下载"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/></svg></button>
-        <button class="iconbtn" title="搜索"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg></button>
+        <button class="iconbtn" title="字幕" @click="captionOn = !captionOn" :class="{ active: captionOn }"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M11 10h6"/></svg></button>
+        <button class="iconbtn" title="转写" @click="doTranscribe(false)" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10"/><path d="m8 9 4 4 4-4"/><path d="M4 17v2h16v-2"/></svg></button>
+        <button class="iconbtn" title="转写并翻译" @click="doTranscribe(true)" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg></button>
+        <button class="iconbtn" title="翻译" @click="doTranslate" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/></svg></button>
+        <button class="iconbtn" title="搜索" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg></button>
         <button class="iconbtn" title="设置" @click="emit('settings')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
       </div>
     </div>
 
     <div class="canvas">
+      <CaptionPanel
+        v-if="captionOn && item"
+        :subtitles="subtitles"
+        :current-time="currentTime"
+        :status="subStatus"
+      />
       <div v-if="!item" class="empty">
         <div class="empty-badge">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
@@ -229,7 +323,21 @@ function onTimeUpdate() {
   stroke: var(--fg-1);
 }
 
+.iconbtn.active svg {
+  stroke: var(--accent);
+}
+
+.iconbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.iconbtn:disabled:hover {
+  background: transparent;
+}
+
 .canvas {
+  position: relative;
   flex: 1;
   display: flex;
   align-items: center;
