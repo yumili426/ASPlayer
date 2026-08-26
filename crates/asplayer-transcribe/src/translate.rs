@@ -71,7 +71,8 @@ pub fn parse_mapping(raw: &str, expected_idx: &[usize]) -> Result<HashMap<usize,
     let obj = v.as_object().context("JSON 顶层不是对象")?;
     let mut map = HashMap::new();
     for idx in expected_idx {
-        if let Some(s) = obj.get(idx.to_string()).and_then(Value::as_str) {
+        let key = idx.to_string();
+        if let Some(s) = obj.get(key.as_str()).and_then(Value::as_str) {
             map.insert(*idx, s.to_string());
         }
     }

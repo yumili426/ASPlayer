@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -52,7 +52,7 @@ pub fn extract_wav(media: &Path, out_dir: &Path) -> Result<PathBuf> {
 /// 读 16kHz 单声道 WAV 为 whisper 所需的 f32 采样
 pub fn read_samples_f32(wav: &Path) -> Result<Vec<f32>> {
     let mut reader = hound::WavReader::open(wav)?;
-    let spec = *reader.spec();
+    let spec = reader.spec();
     if spec.channels != 1 || spec.sample_rate != 16_000 {
         bail!(
             "期望 16kHz 单声道 WAV，实际 {ch} 声道 {sr}Hz",
@@ -61,7 +61,9 @@ pub fn read_samples_f32(wav: &Path) -> Result<Vec<f32>> {
         );
     }
     let i16s: Vec<i16> = reader.samples::<i16>().collect::<Result<_, _>>()?;
-    Ok(whisper_rs::convert_integer_to_float_audio(&i16s)?)
+    let mut f32s = vec![0.0f32; i16s.len()];
+    whisper_rs::convert_integer_to_float_audio(&i16s, &mut f32s)?;
+    Ok(f32s)
 }
 
 #[cfg(test)]
