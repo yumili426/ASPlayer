@@ -31,10 +31,6 @@ function setTheme(t: "light" | "dark") {
   } catch {}
 }
 
-function openSettings() {
-  settingsOpen.value = true;
-}
-
 async function refresh() {
   loading.value = true;
   try {
@@ -70,7 +66,7 @@ refresh();
       :items="items"
       @import="importFolder"
       @play="play"
-      @settings="openSettings"
+      @settings="settingsOpen = true"
     />
     <PlaylistPanel
       :items="items"
@@ -96,6 +92,7 @@ refresh();
   background: var(--bg-0);
 }
 </style>
+
 
 
 
