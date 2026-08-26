@@ -74,9 +74,14 @@ fn emit_progress(app: &AppHandle, media_id: i64, stage: &str, progress: u8, mess
     );
 }
 
-/// 读取媒体文件路径（按 id）。返回 (path, title)
-fn media_path(db: &MediaDb, id: i64) -> Result<(String, String)> {
-    db.media_path(id).map_err(anyhow::Error::from)
+/// 在 Arc<Mutex<MediaDb>> 上执行一次加锁操作（短锁，避免后台任务长期占用）。
+/// 闭包返回 rusqlite::Result，这里自动转成 anyhow::Result。
+fn with_db<T>(
+    db: &Arc<Mutex<MediaDb>>,
+    f: impl FnOnce(&MediaDb) -> rusqlite::Result<T>,
+) -> Result<T> {
+    let guard = db.lock().map_err(|e| anyhow::anyhow!("数据库锁异常: {e}"))?;
+    f(&guard).map_err(anyhow::Error::from)
 }
 /// 转写任务（后台线程调用）：抽音轨 → whisper → 逐段写库 → 状态置 done
 pub fn run_transcription(
@@ -85,23 +90,17 @@ pub fn run_transcription(
     media_id: i64,
     lang: Option<String>,
 ) {
-    let db = match db.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            let _ = app.emit(EVENT_ERROR, format!("数据库锁异常: {e}"));
-            return;
-        }
-    };
-
-    let (path, _title) = match media_path(&db, media_id) {
-        Ok(v) => v,
+    // 此处的耗时步骤（抽音轨、whisper）都在锁外，仅数据库读写短锁。
+    let path = match with_db(&db, |d| d.media_path(media_id)).map(|v| v.0) {
+        Ok(p) => p,
         Err(e) => {
             let _ = app.emit(EVENT_ERROR, format!("找不到媒体: {e}"));
             return;
         }
     };
 
-    let _ = db.set_subtitle_status(media_id, "transcribing", lang.as_deref().unwrap_or(""));
+    let lang_str = lang.unwrap_or_default();
+    let _ = with_db(&db, |d| d.set_subtitle_status(media_id, "transcribing", &lang_str));
     emit_progress(&app, media_id, "extract", 5, "抽取音轨…");
 
     // 抽音轨到临时目录
@@ -110,7 +109,7 @@ pub fn run_transcription(
     let wav = match asplayer_transcribe::audio::extract_wav(&PathBuf::from(&path), &tmp) {
         Ok(w) => w,
         Err(e) => {
-            let _ = db.set_subtitle_status(media_id, "error", "");
+            let _ = with_db(&db, |d| d.set_subtitle_status(media_id, "error", ""));
             let _ = app.emit(EVENT_ERROR, format!("抽音轨失败: {e}"));
             return;
         }
@@ -120,52 +119,41 @@ pub fn run_transcription(
     let samples = match asplayer_transcribe::audio::read_samples_f32(&wav) {
         Ok(s) => s,
         Err(e) => {
-            let _ = db.set_subtitle_status(media_id, "error", "");
+            let _ = with_db(&db, |d| d.set_subtitle_status(media_id, "error", ""));
             let _ = app.emit(EVENT_ERROR, format!("读取音频失败: {e}"));
             return;
         }
     };
 
     let model = model_path().to_string_lossy().into_owned();
-    let segments = match asplayer_transcribe::whisper::transcribe(&model, lang.as_deref(), &samples) {
+    let segments = match asplayer_transcribe::whisper::transcribe(&model, Some(&lang_str), &samples) {
         Ok(segs) => segs,
         Err(e) => {
-            let _ = db.set_subtitle_status(media_id, "error", "");
+            let _ = with_db(&db, |d| d.set_subtitle_status(media_id, "error", ""));
             let _ = app.emit(EVENT_ERROR, format!("转写失败: {e}"));
             return;
         }
     };
 
     emit_progress(&app, media_id, "transcribe", 80, &format!("写入 {} 段字幕…", segments.len()));
-    let _ = db.clear_subtitles(media_id);
-    for (i, seg) in segments.iter().enumerate() {
-        let _ = db.save_subtitle(
-            media_id,
-            seg.start_ms as i64,
-            seg.end_ms as i64,
-            &seg.text,
-            "",
-            i as i64,
-        );
-    }
+    let _ = with_db(&db, |d| {
+        d.clear_subtitles(media_id)?;
+        for (i, seg) in segments.iter().enumerate() {
+            d.save_subtitle(media_id, seg.start_ms as i64, seg.end_ms as i64, &seg.text, "", i as i64)?;
+        }
+        d.set_subtitle_status(media_id, "done", &lang_str)
+    });
 
-    let _ = db.set_subtitle_status(media_id, "done", lang.as_deref().unwrap_or(""));
     let _ = std::fs::remove_dir_all(&tmp);
     emit_progress(&app, media_id, "done", 100, "转写完成");
     let _ = app.emit(EVENT_DONE, media_id);
 }
 
+
 /// 翻译任务（后台线程调用）：读取未翻译段 → 批量翻译 → 回写
 pub fn run_translation(app: AppHandle, db: Arc<Mutex<MediaDb>>, media_id: i64) {
-    let db = match db.lock() {
-        Ok(g) => g,
-        Err(e) => {
-            let _ = app.emit(EVENT_ERROR, format!("数据库锁异常: {e}"));
-            return;
-        }
-    };
-
-    let (status, lang) = match db.get_subtitle_status(media_id) {
+    // 数据库读写短锁；翻译 API 调用在锁外。
+    let (status, lang) = match with_db(&db, |d| d.get_subtitle_status(media_id)) {
         Ok(v) => v,
         Err(e) => {
             let _ = app.emit(EVENT_ERROR, format!("读取状态失败: {e}"));
@@ -177,13 +165,15 @@ pub fn run_translation(app: AppHandle, db: Arc<Mutex<MediaDb>>, media_id: i64) {
         return;
     }
 
-    let cfg = resolve_api_config(&db);
+    let cfg = with_db(&db, |d| Ok(resolve_api_config(d))).unwrap_or_else(|_| {
+        ApiConfig { api_base: String::new(), api_key: String::new(), model: "deepseek-chat".into() }
+    });
     if cfg.api_key.is_empty() {
         let _ = app.emit(EVENT_ERROR, "未配置翻译 API Key（请设置 ASPLAYER_API_KEY 或在设置面板填写）".to_string());
         return;
     }
 
-    let rows = match db.get_untranslated_subtitles(media_id) {
+    let rows = match with_db(&db, |d| d.get_untranslated_subtitles(media_id)) {
         Ok(r) => r,
         Err(e) => {
             let _ = app.emit(EVENT_ERROR, format!("读取待翻译段失败: {e}"));
@@ -195,7 +185,7 @@ pub fn run_translation(app: AppHandle, db: Arc<Mutex<MediaDb>>, media_id: i64) {
         return;
     }
 
-    let _ = db.set_subtitle_status(media_id, "translating", lang.as_str());
+    let _ = with_db(&db, |d| d.set_subtitle_status(media_id, "translating", &lang));
     emit_progress(&app, media_id, "translate", 5, &format!("翻译 {} 段…", rows.len()));
 
     let segments: Vec<asplayer_transcribe::srt::Segment> = rows
@@ -216,20 +206,23 @@ pub fn run_translation(app: AppHandle, db: Arc<Mutex<MediaDb>>, media_id: i64) {
     ) {
         Ok(m) => m,
         Err(e) => {
-            let _ = db.set_subtitle_status(media_id, "done", lang.as_str());
+            let _ = with_db(&db, |d| d.set_subtitle_status(media_id, "done", &lang));
             let _ = app.emit(EVENT_ERROR, format!("翻译失败: {e}"));
             return;
         }
     };
 
     emit_progress(&app, media_id, "translate", 90, "回写译文…");
-    for (idx, row) in rows.iter().enumerate() {
-        if let Some(trans) = map.get(&idx) {
-            let _ = db.update_translation(media_id, row.start_ms, trans);
+    let _ = with_db(&db, |d| {
+        for (idx, row) in rows.iter().enumerate() {
+            if let Some(trans) = map.get(&idx) {
+                d.update_translation(media_id, row.start_ms, trans)?;
+            }
         }
-    }
+        d.set_subtitle_status(media_id, "done", &lang)?;
+        Ok(())
+    });
 
-    let _ = db.set_subtitle_status(media_id, "done", lang.as_str());
     emit_progress(&app, media_id, "done", 100, "翻译完成");
     let _ = app.emit(EVENT_DONE, media_id);
 }
