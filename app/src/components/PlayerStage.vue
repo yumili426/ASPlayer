@@ -396,7 +396,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
           </button>
         </div>
         <div class="btn-group">
-          <div class="vol-wrap" @mouseenter="showVolPop = true" @mouseleave="showVolPop = false">
+          <div class="vol-wrap" @mouseenter="showVolPop = true" @mouseleave="showVolPop = false" @wheel.prevent="onVolWheel">
             <button class="ctl" :disabled="!item" :title="muted || volume === 0 ? '取消静音' : '静音'" @click="toggleMute">
               <svg v-if="muted || volume === 0" width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="m16 9 6 6"/><path d="m22 9-6 6"/></svg>
               <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="M15 9.3a4 4 0 0 1 0 5.4"/></svg>
@@ -413,7 +413,6 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
                     @pointermove="onVolPointerMove"
                     @pointerup="onVolPointerUp"
                     @pointercancel="onVolPointerUp"
-                    @wheel.prevent="onVolWheel"
                   >
                     <div class="vol-fill" :style="{ height: volFillPct + '%' }"></div>
                     <span v-for="t in volTicks" :key="t" class="vol-tick" :style="{ bottom: (t / 100 * 100) + '%' }"></span>
@@ -729,7 +728,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
   bottom: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
-  padding: 8px 6px;
+  padding: 8px 4px;
   background: var(--bg-1);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -762,8 +761,8 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
   flex-direction: column;
   align-items: center;
   gap: 5px;
-  width: 46px;
-  height: 116px;
+  width: 42px;
+  height: 140px;
   justify-content: flex-end;
 }
 
@@ -779,10 +778,10 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
 
 .vol-track {
   position: relative;
-  width: 6px;
+  width: 4px;
   flex: 1;
   min-height: 0;
-  border-radius: 3px;
+  border-radius: 2px;
   background: var(--bg-2);
   cursor: pointer;
   overflow: hidden;
