@@ -2,11 +2,9 @@ import { createApp } from "vue";
 import App from "./App.vue";
 import "./styles/tokens.css";
 
-// 主题：跟随系统，可被 localStorage 覆盖
+// 主题：默认深色（产品主推方向），用户可切换并记忆
 const saved = localStorage.getItem("theme");
-const prefersLight = window.matchMedia("(prefers-color-scheme: light)").matches;
-document.documentElement.dataset.theme =
-  saved ?? (prefersLight ? "light" : "dark");
+document.documentElement.dataset.theme = saved ?? "dark";
 
 createApp(App).mount("#app");
 
