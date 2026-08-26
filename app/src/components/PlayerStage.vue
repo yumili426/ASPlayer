@@ -91,11 +91,11 @@ function onTimeUpdate() {
     <div class="stage-topbar">
       <span class="stage-title">ASPlayer</span>
       <div class="toolbar">
-        <button class="iconbtn" title="字幕"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M11 10h6"/></svg></button>
-        <button class="iconbtn" title="翻译"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5h8M8 3v2M6.5 5c.5 3 2.5 6 4.5 7M12 8c-1.5 3-4 5-7 6"/></svg></button>
-        <button class="iconbtn" title="下载"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/></svg></button>
-        <button class="iconbtn" title="搜索"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg></button>
-        <button class="iconbtn" title="设置" @click="emit('settings')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a7 7 0 0 0 0-3l1.7-1.3-1.7-2.9-2 .8a7 7 0 0 0-2.6-1.5L14.6 3h-3.2l-.4 2.2a7 7 0 0 0-2.6 1.5l-2-.8L4.7 8.8l1.7 1.3a7 7 0 0 0 0 3l-1.7 1.3 1.7 2.9 2-.8a7 7 0 0 0 2.6 1.5l.4 2.2h3.2l.4-2.2a7 7 0 0 0 2.6-1.5l2 .8 1.7-2.9z"/></svg></button>
+        <button class="iconbtn" title="字幕"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M11 10h6"/></svg></button>
+        <button class="iconbtn" title="翻译"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h8M8 3v2M6.5 5c.5 3 2.5 6 4.5 7M12 8c-1.5 3-4 5-7 6"/></svg></button>
+        <button class="iconbtn" title="下载"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/></svg></button>
+        <button class="iconbtn" title="搜索"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg></button>
+        <button class="iconbtn" title="设置" @click="emit('settings')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a7 7 0 0 0 0-3l1.7-1.3-1.7-2.9-2 .8a7 7 0 0 0-2.6-1.5L14.6 3h-3.2l-.4 2.2a7 7 0 0 0-2.6 1.5l-2-.8L4.7 8.8l1.7 1.3a7 7 0 0 0 0 3l-1.7 1.3 1.7 2.9 2-.8a7 7 0 0 0 2.6 1.5l.4 2.2h3.2l.4-2.2a7 7 0 0 0 2.6-1.5l2 .8 1.7-2.9z"/></svg></button>
       </div>
     </div>
 
