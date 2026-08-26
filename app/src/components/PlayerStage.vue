@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import CaptionPanel from "./CaptionPanel.vue";
 import type { MediaItem } from "../types";
@@ -25,6 +25,8 @@ const rate = ref(1);
 const loop = ref(false);
 const rateSteps = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const rateText = computed(() => `${rate.value}x`);
+const showRateMenu = ref(false);
+const rateMenuEl = ref<HTMLDivElement | null>(null);
 
 const src = computed(() => (props.item ? convertFileSrc(props.item.path) : ""));
 
@@ -50,6 +52,8 @@ function restorePosition() {
   if (el.paused) el.play().catch(() => {});
 }
 onMounted(restorePosition);
+onMounted(() => document.addEventListener("click", onRateDocClick));
+onBeforeUnmount(() => document.removeEventListener("click", onRateDocClick));
 watch(
   () => props.item?.id,
   (id) => {
@@ -132,9 +136,21 @@ function applyRate(r: number) {
   if (el) el.playbackRate = r;
 }
 
-function cycleRate() {
-  const idx = rateSteps.indexOf(rate.value);
-  applyRate(rateSteps[(idx + 1) % rateSteps.length]);
+function toggleRateMenu() {
+  showRateMenu.value = !showRateMenu.value;
+}
+
+function selectRate(r: number) {
+  applyRate(r);
+  showRateMenu.value = false;
+}
+
+function onRateDocClick(e: MouseEvent) {
+  if (!showRateMenu.value) return;
+  const target = e.target as Node;
+  if (rateMenuEl.value && !rateMenuEl.value.contains(target)) {
+    showRateMenu.value = false;
+  }
 }
 
 function toggleLoop() {
@@ -242,7 +258,26 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
         </div>
         <div class="flex-spacer"></div>
             <div class="btn-group">
-              <button class="ctl rate-btn" :disabled="!item" title="倍速" @click="cycleRate">{{ rateText }}</button>
+              <div class="rate-wrap" ref="rateMenuEl">
+                <button class="ctl rate-btn" :disabled="!item" title="倍速" @click.stop="toggleRateMenu">{{ rateText }}</button>
+                <Transition name="rate-pop">
+                  <div v-if="showRateMenu && item" class="rate-menu">
+                    <div class="rate-menu-title">播放速度</div>
+                    <div class="rate-list">
+                      <div
+                        v-for="r in rateSteps"
+                        :key="r"
+                        class="rate-item"
+                        :class="{ active: r === rate }"
+                        @click.stop="selectRate(r)"
+                      >
+                        <span>{{ r }}x</span>
+                        <svg v-if="r === rate" width="14" height="14" viewBox="0 0 24 24" fill="none" style="stroke:var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                      </div>
+                    </div>
+                  </div>
+                </Transition>
+              </div>
               <button class="ctl" :class="{ active: loop }" :disabled="!item" :title="loop ? '关闭循环' : '单集循环'" @click="toggleLoop">
                 <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
               </button>
@@ -588,6 +623,75 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+.rate-wrap {
+  position: relative;
+  display: flex;
+}
+
+.rate-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  min-width: 132px;
+  padding: 6px;
+  background: var(--bg-glass);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(16px);
+  z-index: 40;
+}
+
+.rate-menu-title {
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  color: var(--fg-3);
+}
+
+.rate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rate-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.rate-item:hover {
+  background: var(--bg-2);
+  color: var(--fg-1);
+}
+
+.rate-item.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.rate-item svg {
+  flex: 0 0 14px;
+}
+
+.rate-pop-enter-active,
+.rate-pop-leave-active {
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.rate-pop-enter-from,
+.rate-pop-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
 }
 
 .ctl.active svg {
