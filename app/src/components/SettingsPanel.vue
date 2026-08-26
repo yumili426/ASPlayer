@@ -3,9 +3,10 @@ import { ref, watch } from "vue";
 import { getSettings, saveSettings, getEnvApiConfig } from "../api/subtitle";
 import { useCaptionStyle } from "../stores/captionStyle";
 import { useShortcuts } from "../stores/shortcuts";
+import { usePlayback } from "../stores/playback";
 import type { ShortcutActionName } from "../types";
 
-type TabKey = "appearance" | "subtitle" | "translate" | "shortcuts";
+type TabKey = "appearance" | "playback" | "subtitle" | "translate" | "shortcuts";
 
 const props = defineProps<{ open: boolean; theme: string }>();
 const emit = defineEmits<{ close: []; setTheme: [theme: "light" | "dark"] }>();
@@ -53,12 +54,14 @@ function onCaptionColor(e: Event) {
 const activeTab = ref<TabKey>("appearance");
 const tabs: { key: TabKey; label: string }[] = [
   { key: "appearance", label: "外观" },
+  { key: "playback", label: "播放" },
   { key: "subtitle", label: "字幕" },
   { key: "translate", label: "翻译" },
   { key: "shortcuts", label: "快捷键" },
 ];
 
 const sc = useShortcuts();
+const pb = usePlayback();
 
 function keysOf(action: ShortcutActionName): string {
   return sc.shortcuts.value.find((s) => s.action === action)?.keys ?? "";
@@ -197,6 +200,32 @@ function onClick(e: MouseEvent) {
             </button>
           </div>
         </div>
+      </div>
+
+      <div class="section" v-show="activeTab === 'playback'">
+        <div class="section-label">播放</div>
+
+        <div class="row">
+          <span class="row-label">自动播放</span>
+          <div class="segmented">
+            <button
+              class="segment"
+              :class="{ active: pb.autoplayNext.value }"
+              @click="pb.autoplayNext.value = true"
+            >
+              开
+            </button>
+            <button
+              class="segment"
+              :class="{ active: !pb.autoplayNext.value }"
+              @click="pb.autoplayNext.value = false"
+            >
+              关
+            </button>
+          </div>
+        </div>
+
+        <p class="hint">开启后，列表循环模式下播完当前集会连播下一集；关闭则播完即停（取消循环）。</p>
       </div>
 
       <div class="section" v-show="activeTab === 'subtitle'">

@@ -4,9 +4,11 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import CaptionPanel from "./CaptionPanel.vue";
 import type { MediaItem } from "../types";
 import { useSubtitle } from "../stores/subtitle";
+import { usePlayback } from "../stores/playback";
 import { transcribeMedia, translateMedia } from "../api/subtitle";
 
 const sub = useSubtitle();
+const pb = usePlayback();
 
 const props = defineProps<{ item: MediaItem | null; items: MediaItem[] }>();
 const emit = defineEmits<{
@@ -22,7 +24,7 @@ const playing = ref(false);
 const duration = ref(0);
 const captionOn = ref(true);
 const rate = ref(1);
-const loop = ref(false);
+const loopMode = ref<"list" | "single">("list");
 const rateSteps = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const rateText = computed(() => `${rate.value}x`);
 const showRateMenu = ref(false);
@@ -45,7 +47,7 @@ function restorePosition() {
   const el = mediaEl.value;
   if (!el || !props.item) return;
   el.playbackRate = rate.value;
-  el.loop = loop.value;
+  el.loop = loopMode.value === "single";
   if (props.item.playback_position > 0) {
     el.currentTime = props.item.playback_position / 1000;
   }
@@ -154,9 +156,17 @@ function onRateDocClick(e: MouseEvent) {
 }
 
 function toggleLoop() {
-  loop.value = !loop.value;
+  loopMode.value = loopMode.value === "single" ? "list" : "single";
   const el = mediaEl.value;
-  if (el) el.loop = loop.value;
+  if (el) el.loop = loopMode.value === "single";
+}
+
+function onEnded() {
+  // 单曲循环由 HTML loop（el.loop=true）自动无限重播，通常不会触发 ended
+  if (loopMode.value === "single") return;
+  // 列表循环：关闭自动播放则播完即停
+  if (!pb.autoplayNext.value) return;
+  next();
 }
 
 let lastSave = 0;
@@ -226,6 +236,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
           @play="playing = true" @pause="playing = false"
           @timeupdate="onTimeUpdate"
           @loadedmetadata="duration = ($event.target as HTMLVideoElement).duration"
+          @ended="onEnded"
         ></video>
         <div v-else class="artwork">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M4 13a8 8 0 0 1 16 0M12 13v5"/><rect x="3" y="13" width="4" height="6" rx="1.5"/><rect x="17" y="13" width="4" height="6" rx="1.5"/></svg>
@@ -236,6 +247,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
           @play="playing = true" @pause="playing = false"
           @timeupdate="onTimeUpdate"
           @loadedmetadata="duration = ($event.target as HTMLAudioElement).duration"
+          @ended="onEnded"
         ></audio>
         <p class="now-title">{{ item.title }}</p>
       </div>
@@ -278,8 +290,9 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
                   </div>
                 </Transition>
               </div>
-              <button class="ctl" :class="{ active: loop }" :disabled="!item" :title="loop ? '关闭循环' : '单集循环'" @click="toggleLoop">
-                <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>
+              <button class="ctl" :disabled="!item" :title="loopMode === 'single' ? '单曲循环' : '列表循环'" @click="toggleLoop">
+                <svg v-if="loopMode === 'single'" fill="none" viewBox="0 0 24 24" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>
+                <svg v-else fill="none" viewBox="0 0 24 24" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
               </button>
             </div>
         <div class="btn-group">
@@ -694,12 +707,4 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
   transform: translateY(6px);
 }
 
-.ctl.active,
-.ctl.active:hover:not(:disabled) {
-  background: var(--accent-dim);
-}
-
-.ctl.active svg {
-  stroke: var(--accent);
-}
 </style>
