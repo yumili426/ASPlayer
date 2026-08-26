@@ -21,6 +21,10 @@ const mediaEl = ref<HTMLVideoElement | HTMLAudioElement | null>(null);
 const playing = ref(false);
 const duration = ref(0);
 const captionOn = ref(true);
+const rate = ref(1);
+const loop = ref(false);
+const rateSteps = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const rateText = computed(() => `${rate.value}x`);
 
 const src = computed(() => (props.item ? convertFileSrc(props.item.path) : ""));
 
@@ -38,6 +42,8 @@ function fmt(t: number): string {
 function restorePosition() {
   const el = mediaEl.value;
   if (!el || !props.item) return;
+  el.playbackRate = rate.value;
+  el.loop = loop.value;
   if (props.item.playback_position > 0) {
     el.currentTime = props.item.playback_position / 1000;
   }
@@ -118,6 +124,23 @@ function toggleFullscreen() {
   } else if (el.requestFullscreen) {
     el.requestFullscreen();
   }
+}
+
+function applyRate(r: number) {
+  rate.value = r;
+  const el = mediaEl.value;
+  if (el) el.playbackRate = r;
+}
+
+function cycleRate() {
+  const idx = rateSteps.indexOf(rate.value);
+  applyRate(rateSteps[(idx + 1) % rateSteps.length]);
+}
+
+function toggleLoop() {
+  loop.value = !loop.value;
+  const el = mediaEl.value;
+  if (el) el.loop = loop.value;
 }
 
 let lastSave = 0;
@@ -218,6 +241,12 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
           <button class="ctl" title="下一首" :disabled="!item" @click="next"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 5v14M5 6l8 6-8 6z"/></svg></button>
         </div>
         <div class="flex-spacer"></div>
+            <div class="btn-group">
+              <button class="ctl rate-btn" :disabled="!item" title="倍速" @click="cycleRate">{{ rateText }}</button>
+              <button class="ctl" :class="{ active: loop }" :disabled="!item" :title="loop ? '关闭循环' : '单集循环'" @click="toggleLoop">
+                <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+              </button>
+            </div>
         <div class="btn-group">
           <button class="ctl seek" title="后退 15 秒" :disabled="!item" @click="seekBy(-15)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
@@ -551,5 +580,17 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
 .ctl.play:hover:not(:disabled) {
   background: var(--accent);
   opacity: 0.9;
+}
+
+.rate-btn {
+  width: auto;
+  padding: 0 9px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.ctl.active svg {
+  stroke: var(--accent);
 }
 </style>
