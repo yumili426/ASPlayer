@@ -24,7 +24,6 @@ const playing = ref(false);
 const duration = ref(0);
 const captionOn = ref(true);
 const rate = ref(1);
-const loopMode = ref<"list" | "single">("list");
 const rateSteps = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const rateText = computed(() => `${rate.value}x`);
 const showRateMenu = ref(false);
@@ -47,7 +46,7 @@ function restorePosition() {
   const el = mediaEl.value;
   if (!el || !props.item) return;
   el.playbackRate = rate.value;
-  el.loop = loopMode.value === "single";
+  el.loop = pb.playback.loopMode === "single";
   if (props.item.playback_position > 0) {
     el.currentTime = props.item.playback_position / 1000;
   }
@@ -156,16 +155,16 @@ function onRateDocClick(e: MouseEvent) {
 }
 
 function toggleLoop() {
-  loopMode.value = loopMode.value === "single" ? "list" : "single";
+  pb.playback.loopMode = pb.playback.loopMode === "single" ? "list" : "single";
   const el = mediaEl.value;
-  if (el) el.loop = loopMode.value === "single";
+  if (el) el.loop = pb.playback.loopMode === "single";
 }
 
 function onEnded() {
   // 单曲循环由 HTML loop（el.loop=true）自动无限重播，通常不会触发 ended
-  if (loopMode.value === "single") return;
+  if (pb.playback.loopMode === "single") return;
   // 列表循环：关闭自动播放则播完即停
-  if (!pb.autoplayNext.value) return;
+  if (!pb.playback.autoplayNext) return;
   next();
 }
 
@@ -290,8 +289,8 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
                   </div>
                 </Transition>
               </div>
-              <button class="ctl" :disabled="!item" :title="loopMode === 'single' ? '单曲循环' : '列表循环'" @click="toggleLoop">
-                <svg v-if="loopMode === 'single'" fill="none" viewBox="0 0 24 24" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>
+              <button class="ctl" :disabled="!item" :title="pb.playback.loopMode === 'single' ? '单曲循环' : '列表循环'" @click="toggleLoop">
+                <svg v-if="pb.playback.loopMode === 'single'" fill="none" viewBox="0 0 24 24" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>
                 <svg v-else fill="none" viewBox="0 0 24 24" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
               </button>
             </div>

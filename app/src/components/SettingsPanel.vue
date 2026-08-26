@@ -210,15 +210,15 @@ function onClick(e: MouseEvent) {
           <div class="segmented">
             <button
               class="segment"
-              :class="{ active: pb.autoplayNext.value }"
-              @click="pb.autoplayNext.value = true"
+              :class="{ active: pb.playback.autoplayNext }"
+              @click="pb.playback.autoplayNext = true"
             >
               开
             </button>
             <button
               class="segment"
-              :class="{ active: !pb.autoplayNext.value }"
-              @click="pb.autoplayNext.value = false"
+              :class="{ active: !pb.playback.autoplayNext }"
+              @click="pb.playback.autoplayNext = false"
             >
               关
             </button>

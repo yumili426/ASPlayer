@@ -1,30 +1,51 @@
-import { ref, watch } from "vue";
+import { reactive, watch } from "vue";
 
-export const defaultAutoplayNext = true;
-const STORAGE_KEY = "asplayer-playback-v1";
-
-function load(): boolean {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw != null) return JSON.parse(raw) as boolean;
-  } catch {
-    /* ignore */
-  }
-  return defaultAutoplayNext;
+export interface PlaybackSettings {
+  autoplayNext: boolean; // 列表循环模式下播完自动连播下一集
+  loopMode: "list" | "single"; // 循环模式：列表循环 / 单曲循环
 }
 
-// 自动播放：列表循环模式下当前集播完后是否自动连播下一集
-// （关闭后即达到"播完即停、不循环"的效果）
-export const autoplayNext = ref<boolean>(load());
+export const defaultPlayback: PlaybackSettings = {
+  autoplayNext: true,
+  loopMode: "list",
+};
 
-watch(autoplayNext, (v) => {
+const STORAGE_KEY = "asplayer-playback-v1";
+
+function load(): PlaybackSettings {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(v));
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw);
+      // 兼容旧版本：曾单独把 autoplayNext 存为布尔值
+      if (typeof parsed === "boolean") {
+        return { ...defaultPlayback, autoplayNext: parsed };
+      }
+      if (parsed && typeof parsed === "object") {
+        return { ...defaultPlayback, ...(parsed as Partial<PlaybackSettings>) };
+      }
+    }
   } catch {
     /* ignore */
   }
-});
+  return { ...defaultPlayback };
+}
+
+// 共享播放设置（PlayerStage 控制栏 + SettingsPanel 配置共用），持久化到 localStorage
+export const playback = reactive<PlaybackSettings>(load());
+
+watch(
+  playback,
+  () => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(playback));
+    } catch {
+      /* ignore */
+    }
+  },
+  { deep: true }
+);
 
 export function usePlayback() {
-  return { autoplayNext, defaultAutoplayNext };
+  return { playback, defaultPlayback };
 }
