@@ -146,17 +146,17 @@ function onTimeUpdate() {
       </div>
       <div class="btn-row">
         <div class="btn-group">
-          <button class="ctl" title="上一首" :disabled="!item" @click="prev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 5v14M19 6l-8 6 8 6z"/></svg></button>
+          <button class="ctl" title="上一首" :disabled="!item" @click="prev"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14M19 6l-8 6 8 6z"/></svg></button>
           <button class="ctl play" :disabled="!item" :title="playing ? '暂停' : '播放'" @click="togglePlay">
-            <svg v-if="playing" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 5v14M16 5v14"/></svg>
-            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M7 5l12 7-12 7z"/></svg>
+            <svg v-if="playing" width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14M16 5v14"/></svg>
+            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5l12 7-12 7z"/></svg>
           </button>
-          <button class="ctl" title="下一首" :disabled="!item" @click="next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 5v14M5 6l8 6-8 6z"/></svg></button>
+          <button class="ctl" title="下一首" :disabled="!item" @click="next"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 5v14M5 6l8 6-8 6z"/></svg></button>
         </div>
         <div class="flex-spacer"></div>
         <div class="btn-group">
-          <button class="ctl" title="后退 15 秒" :disabled="!item" @click="seekBy(-15)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 8a9 9 0 1 0 2-5"/><path d="M3 3v5h5"/><text x="9" y="20" font-size="6" fill="currentColor" stroke="none">15</text></svg></button>
-          <button class="ctl" title="前进 15 秒" :disabled="!item" @click="seekBy(15)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 8a9 9 0 1 1-2-5"/><path d="M21 3v5h-5"/><text x="9" y="20" font-size="6" fill="currentColor" stroke="none">15</text></svg></button>
+          <button class="ctl" title="后退 15 秒" :disabled="!item" @click="seekBy(-15)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a9 9 0 1 0 2-5"/><path d="M3 3v5h5"/><text x="9" y="20" font-size="6" fill="currentColor" stroke="none">15</text></svg></button>
+          <button class="ctl" title="前进 15 秒" :disabled="!item" @click="seekBy(15)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a9 9 0 1 1-2-5"/><path d="M21 3v5h-5"/><text x="9" y="20" font-size="6" fill="currentColor" stroke="none">15</text></svg></button>
         </div>
       </div>
     </div>
@@ -195,6 +195,7 @@ function onTimeUpdate() {
 .iconbtn {
   width: 32px;
   height: 32px;
+  flex: 0 0 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -213,6 +214,7 @@ function onTimeUpdate() {
 .iconbtn svg {
   width: 16px;
   height: 16px;
+  flex: 0 0 16px;
   display: block;
   stroke: var(--fg-2);
 }
@@ -403,6 +405,7 @@ function onTimeUpdate() {
 .ctl {
   width: 36px;
   height: 36px;
+  flex: 0 0 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -427,6 +430,9 @@ function onTimeUpdate() {
 .ctl svg {
   width: 18px;
   height: 18px;
+  flex: 0 0 18px;
+  display: block;
+  stroke: var(--fg-2);
 }
 
 .ctl.play {
