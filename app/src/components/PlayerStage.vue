@@ -279,7 +279,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
                 </Transition>
               </div>
               <button class="ctl" :class="{ active: loop }" :disabled="!item" :title="loop ? '关闭循环' : '单集循环'" @click="toggleLoop">
-                <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+                <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>
               </button>
             </div>
         <div class="btn-group">
@@ -692,6 +692,11 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
 .rate-pop-leave-to {
   opacity: 0;
   transform: translateY(6px);
+}
+
+.ctl.active,
+.ctl.active:hover:not(:disabled) {
+  background: var(--accent-dim);
 }
 
 .ctl.active svg {
