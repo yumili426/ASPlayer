@@ -57,6 +57,36 @@ async function importFolder() {
   }
 }
 
+async function importFiles() {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const selected = await open({
+    multiple: true,
+    filters: [
+      {
+        name: "媒体文件",
+        extensions: [
+          "mp3", "m4a", "wav", "flac", "ogg", "oga", "opus", "aac", "m4b",
+          "wma", "aiff", "aif", "ape", "mka", "mp2", "amr", "ac3",
+          "mp4", "m4v", "webm", "mkv", "mov", "avi", "wmv", "flv", "ts",
+        ],
+      },
+    ],
+  });
+  if (!selected || selected.length === 0) return;
+  const paths = Array.isArray(selected) ? selected : [selected];
+  loading.value = true;
+  try {
+    items.value = await invoke<MediaItem[]>("import_files", { paths });
+    // eslint-disable-next-line no-console
+    console.log("[ASPlayer] 导入文件:", paths, "→", items.value.length, "个");
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 导入文件失败:", e);
+  } finally {
+    loading.value = false;
+  }
+}
+
 function play(item: MediaItem) {
   current.value = item;
 }
@@ -69,7 +99,7 @@ refresh();
     <PlayerStage
       :item="current"
       :items="items"
-      @import="importFolder"
+      @import="importFiles"
       @play="play"
       @settings="settingsOpen = true"
     />
