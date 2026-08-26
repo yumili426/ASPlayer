@@ -4,7 +4,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type { MediaItem } from "../types";
 
 const props = defineProps<{ item: MediaItem | null }>();
-const emit = defineEmits<{ back: [] }>();
+const emit = defineEmits<{ close: [] }>();
 
 const mediaEl = ref<HTMLVideoElement | HTMLAudioElement | null>(null);
 const playing = ref(false);
@@ -25,9 +25,12 @@ function fmt(t: number): string {
 // 恢复上次播放位置（挂载与切换媒体时）
 function restorePosition() {
   const el = mediaEl.value;
-  if (el && props.item && props.item.playback_position > 0) {
+  if (!el || !props.item) return;
+  if (props.item.playback_position > 0) {
     el.currentTime = props.item.playback_position / 1000;
   }
+  // 打开即自动播放（ASMR 收听习惯：点开就听）
+  if (el.paused) el.play().catch(() => {});
 }
 onMounted(restorePosition);
 watch(
@@ -73,7 +76,7 @@ function onTimeUpdate() {
 
 <template>
   <div class="player">
-    <button class="ghost back" @click="emit('back')">← 返回媒体库</button>
+    <button class="ghost back" @click="emit('close')">✕</button>
 
     <div v-if="item" class="stage">
       <!-- 封面区（仅音频显示） -->
@@ -133,17 +136,23 @@ function onTimeUpdate() {
 
 <style scoped>
 .player {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 16px 24px;
+  padding: 20px 12px 16px;
 }
 
 .back {
-  align-self: flex-start;
+  position: absolute;
+  top: 10px;
+  right: 14px;
   background: transparent;
   border: none;
-  color: var(--fg-2);
+  color: var(--fg-3);
+  font-size: 15px;
+  cursor: pointer;
+  z-index: 2;
 }
 
 .stage {
@@ -157,10 +166,10 @@ function onTimeUpdate() {
 }
 
 .artwork {
-  margin-top: 4vh;
-  width: min(300px, 40vw);
+  margin-top: 2vh;
+  width: min(200px, 70%);
   aspect-ratio: 1;
-  border-radius: 24px;
+  border-radius: 18px;
   background: linear-gradient(145deg, var(--bg-2), var(--bg-1));
   border: 1px solid var(--line);
   box-shadow: var(--shadow-card);
@@ -170,27 +179,27 @@ function onTimeUpdate() {
 }
 
 .note {
-  font-size: 72px;
+  font-size: 52px;
   color: var(--accent);
   opacity: 0.85;
 }
 
 .title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   text-align: center;
-  max-width: 80%;
+  max-width: 90%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .controls {
-  width: min(560px, 90%);
-  padding-bottom: 3vh;
+  width: 100%;
+  padding-bottom: 2vh;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .seek-row {
