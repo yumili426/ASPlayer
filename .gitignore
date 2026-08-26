@@ -25,3 +25,7 @@ Thumbs.db
 # 本地模型缓存（绝不入库）
 models/
 *.gguf
+
+# 本地工具二进制（ffmpeg 等，分发时另行打包）
+tools/
+*.exe
