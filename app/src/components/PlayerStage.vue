@@ -30,6 +30,8 @@ const muted = ref(false);
 const appWindow = getCurrentWindow();
 const isFullscreen = ref(false);
 const volTrack = ref<HTMLDivElement | null>(null);
+const showVolOsd = ref(false);
+let volOsdTimer: number | null = null;
 let audioCtx: AudioContext | null = null;
 let gainNode: GainNode | null = null;
 let boundEl: HTMLMediaElement | null = null;
@@ -161,6 +163,12 @@ function applyVolume() {
   if (gainNode) gainNode.gain.value = v > 1 ? v : 1;
 }
 
+function flashVolumeOsd() {
+  showVolOsd.value = true;
+  if (volOsdTimer) clearTimeout(volOsdTimer);
+  volOsdTimer = window.setTimeout(() => (showVolOsd.value = false), 900);
+}
+
 function setVolume(v: number) {
   volume.value = Math.max(0, Math.min(2, v));
   const el = mediaEl.value;
@@ -170,6 +178,7 @@ function setVolume(v: number) {
     if (volume.value > 0 && el.muted) el.muted = false;
   }
   if (audioCtx?.state === "suspended") audioCtx.resume().catch(() => {});
+  flashVolumeOsd();
 }
 
 function toggleMute() {
@@ -193,6 +202,11 @@ function onPlay() {
   playing.value = true;
   // 用户手势后恢复 AudioContext，避免 Web Audio 增益路径静音
   if (audioCtx?.state === "suspended") audioCtx.resume().catch(() => {});
+}
+
+function onVolWheel(e: WheelEvent) {
+  const delta = e.deltaY > 0 ? -0.1 : 0.1;
+  setVolume(volume.value + delta);
 }
 
 function updateVolFromPointer(e: PointerEvent) {
@@ -347,6 +361,12 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
           @volumechange="onVolumeChange"
         ></audio>
         <p class="now-title">{{ item.title }}</p>
+
+        <Transition name="fade">
+          <div v-if="showVolOsd" class="vol-osd">
+            <span class="vol-osd-num">{{ volumePct }}%</span>
+          </div>
+        </Transition>
       </div>
     </div>
 
@@ -417,6 +437,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
               @pointermove="onVolPointerMove"
               @pointerup="onVolPointerUp"
               @pointercancel="onVolPointerUp"
+              @wheel.prevent="onVolWheel"
             >
               <div class="vol-fill" :style="{ height: volFillPct + '%' }"></div>
               <span v-for="t in volTicks" :key="t" class="vol-tick" :style="{ bottom: (t / 200 * 100) + '%' }"></span>
@@ -582,6 +603,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
 }
 
 .playing {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -766,6 +788,40 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
   background: var(--bg-1);
   opacity: 0.65;
   pointer-events: none;
+}
+
+.vol-osd {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 12px;
+  padding: 14px 22px;
+  pointer-events: none;
+}
+
+.vol-osd-num {
+  color: #fff;
+  font-size: 30px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 .ctl.seek {
