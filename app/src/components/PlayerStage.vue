@@ -92,10 +92,10 @@ function onTimeUpdate() {
       <span class="stage-title">ASPlayer</span>
       <div class="toolbar">
         <button class="iconbtn" title="字幕"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M11 10h6"/></svg></button>
-        <button class="iconbtn" title="翻译"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h8M8 3v2M6.5 5c.5 3 2.5 6 4.5 7M12 8c-1.5 3-4 5-7 6"/></svg></button>
+        <button class="iconbtn" title="翻译"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg></button>
         <button class="iconbtn" title="下载"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/></svg></button>
         <button class="iconbtn" title="搜索"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4-4"/></svg></button>
-        <button class="iconbtn" title="设置" @click="emit('settings')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a7 7 0 0 0 0-3l1.7-1.3-1.7-2.9-2 .8a7 7 0 0 0-2.6-1.5L14.6 3h-3.2l-.4 2.2a7 7 0 0 0-2.6 1.5l-2-.8L4.7 8.8l1.7 1.3a7 7 0 0 0 0 3l-1.7 1.3 1.7 2.9 2-.8a7 7 0 0 0 2.6 1.5l.4 2.2h3.2l.4-2.2a7 7 0 0 0 2.6-1.5l2 .8 1.7-2.9z"/></svg></button>
+        <button class="iconbtn" title="设置" @click="emit('settings')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
       </div>
     </div>
 
@@ -155,8 +155,14 @@ function onTimeUpdate() {
         </div>
         <div class="flex-spacer"></div>
         <div class="btn-group">
-          <button class="ctl" title="后退 15 秒" :disabled="!item" @click="seekBy(-15)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a9 9 0 1 0 2-5"/><path d="M3 3v5h5"/><text x="9" y="20" font-size="6" fill="currentColor" stroke="none">15</text></svg></button>
-          <button class="ctl" title="前进 15 秒" :disabled="!item" @click="seekBy(15)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a9 9 0 1 1-2-5"/><path d="M21 3v5h-5"/><text x="9" y="20" font-size="6" fill="currentColor" stroke="none">15</text></svg></button>
+          <button class="ctl seek" title="后退 15 秒" :disabled="!item" @click="seekBy(-15)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a9 9 0 1 0 2-5"/><path d="M3 3v5h5"/></svg>
+            <span class="seek-num">15</span>
+          </button>
+          <button class="ctl seek" title="前进 15 秒" :disabled="!item" @click="seekBy(15)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a9 9 0 1 1-2-5"/><path d="M21 3v5h-5"/></svg>
+            <span class="seek-num">15</span>
+          </button>
         </div>
       </div>
     </div>
@@ -433,6 +439,26 @@ function onTimeUpdate() {
   flex: 0 0 18px;
   display: block;
   stroke: var(--fg-2);
+}
+
+.ctl.seek {
+  position: relative;
+}
+
+.ctl.seek .seek-num {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--fg-2);
+  pointer-events: none;
+}
+
+.ctl.seek:hover .seek-num {
+  color: var(--fg-1);
 }
 
 .ctl.play {
