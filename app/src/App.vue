@@ -3,11 +3,37 @@ import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import PlayerStage from "./components/PlayerStage.vue";
 import PlaylistPanel from "./components/PlaylistPanel.vue";
+import SettingsPanel from "./components/SettingsPanel.vue";
 import type { MediaItem } from "./types";
 
 const items = ref<MediaItem[]>([]);
 const current = ref<MediaItem | null>(null);
 const loading = ref(false);
+const settingsOpen = ref(false);
+const theme = ref<"light" | "dark">("dark");
+
+const THEME_KEY = "asplayer-theme-v2";
+const saved = (() => {
+  try {
+    return localStorage.getItem(THEME_KEY) as "light" | "dark" | null;
+  } catch {
+    return null;
+  }
+})();
+theme.value = saved ?? "dark";
+document.documentElement.dataset.theme = theme.value;
+
+function setTheme(t: "light" | "dark") {
+  theme.value = t;
+  document.documentElement.dataset.theme = t;
+  try {
+    localStorage.setItem(THEME_KEY, t);
+  } catch {}
+}
+
+function openSettings() {
+  settingsOpen.value = true;
+}
 
 async function refresh() {
   loading.value = true;
@@ -34,16 +60,6 @@ function play(item: MediaItem) {
   current.value = item;
 }
 
-const THEME_KEY = "asplayer-theme-v2";
-function toggleTheme() {
-  const next =
-    document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = next;
-  try {
-    localStorage.setItem(THEME_KEY, next);
-  } catch {}
-}
-
 refresh();
 </script>
 
@@ -54,6 +70,7 @@ refresh();
       :items="items"
       @import="importFolder"
       @play="play"
+      @settings="openSettings"
     />
     <PlaylistPanel
       :items="items"
@@ -63,7 +80,12 @@ refresh();
       @import="importFolder"
       @refresh="refresh"
     />
-    <button class="theme-toggle" title="切换主题" @click="toggleTheme">◐</button>
+    <SettingsPanel
+      :open="settingsOpen"
+      :theme="theme"
+      @close="settingsOpen = false"
+      @set-theme="setTheme"
+    />
   </div>
 </template>
 
@@ -73,29 +95,7 @@ refresh();
   height: 100vh;
   background: var(--bg-0);
 }
-
-.theme-toggle {
-  position: fixed;
-  top: 10px;
-  right: 64px;
-  width: 34px;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--fg-3);
-  border-radius: 8px;
-  cursor: pointer;
-  z-index: 10;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.theme-toggle:hover {
-  background: var(--bg-2);
-  color: var(--fg-1);
-}
 </style>
+
 
 

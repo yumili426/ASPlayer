@@ -33,10 +33,11 @@ function fmtDuration(ms: number): string {
         <span class="pl-count">{{ loading ? "…" : `${items.length} 个` }}</span>
       </div>
       <div class="pl-actions">
-        <button class="iconbtn" title="导入" @click="emit('import')">
+        <button class="tool-btn" title="导入" @click="emit('import')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>
+          <span>导入</span>
         </button>
-        <button class="iconbtn" title="刷新" @click="emit('refresh')">
+        <button class="tool-btn" title="刷新" @click="emit('refresh')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg>
         </button>
       </div>
@@ -102,31 +103,35 @@ function fmtDuration(ms: number): string {
 
 .pl-actions {
   display: flex;
-  gap: 2px;
+  gap: 6px;
 }
 
-.iconbtn {
-  width: 32px;
-  height: 32px;
-  display: flex;
+.tool-btn {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
   border: none;
-  background: transparent;
-  color: var(--fg-2);
   border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.iconbtn:hover {
   background: var(--bg-2);
   color: var(--fg-1);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
 }
 
-.iconbtn svg {
-  width: 16px;
-  height: 16px;
+.tool-btn:first-child {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tool-btn:hover {
+  opacity: 0.9;
+}
+
+.tool-btn svg {
+  width: 15px;
+  height: 15px;
 }
 
 .pl-scroll {
