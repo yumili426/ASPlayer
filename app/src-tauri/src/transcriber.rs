@@ -126,7 +126,8 @@ pub fn run_transcription(
     };
 
     let model = model_path().to_string_lossy().into_owned();
-    let segments = match asplayer_transcribe::whisper::transcribe(&model, Some(&lang_str), &samples) {
+    let lang_opt = if lang_str.is_empty() { None } else { Some(lang_str.as_str()) };
+    let segments = match asplayer_transcribe::whisper::transcribe(&model, lang_opt, &samples) {
         Ok(segs) => segs,
         Err(e) => {
             let _ = with_db(&db, |d| d.set_subtitle_status(media_id, "error", ""));
