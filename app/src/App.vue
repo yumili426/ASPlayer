@@ -12,9 +12,9 @@ import { listen } from "@tauri-apps/api/event";
 import {
   isOverlayLocked,
   isOverlayVisible,
-  pushOverlaySubtitle,
   toggleOverlayVisible,
 } from "./api/overlay";
+import { setEnabled as overlaySetEnabled, resetFeed as overlayResetFeed } from "./overlayFeed";
 import {
   onTranscribeProgress,
   onTranscribeDone,
@@ -244,8 +244,6 @@ function onFullscreenChange(v: boolean) {
 
 const overlayVisible = ref(false);
 const overlayLocked = ref(false);
-/** 最近一次推送到悬浮窗的句序号；-2 表示未知（换文件/换列表后强制重发） */
-let lastSentOrdinal = -2;
 
 async function onOverlayToggle() {
   try {
@@ -257,43 +255,14 @@ async function onOverlayToggle() {
   }
 }
 
-/**
- * 歌词式推送当前句到悬浮窗（后端中继）。
- * 只在句序号变化时才 invoke，把 IPC 频率压到每句一次；
- * 句间空隙保留上一句内容，观感接近内嵌字幕。
- */
-function pushCurrentSubtitle() {
-  if (!overlayVisible.value || !current.value) return;
-  const t = sub.currentTime.value * 1000;
-  const list = sub.subtitles.value;
-  const idx = list.findIndex((s) => t >= s.start_ms && t < s.end_ms);
-  if (idx < 0 || idx === lastSentOrdinal) return;
-  lastSentOrdinal = idx;
-  const s = list[idx];
-  pushOverlaySubtitle(s.text, s.translation, s.start_ms).catch(() => {});
-}
-
-watch(() => sub.currentTime.value, pushCurrentSubtitle);
+// 悬浮窗显隐开关直接驱动推送引擎挂起/恢复
+watch(overlayVisible, overlaySetEnabled);
+// 换文件或字幕数据刷新后：清空悬浮窗残留，等待下一次真实句子
 watch(
-  () => sub.subtitles.value,
-  () => {
-    lastSentOrdinal = -2;
-  }
+  () => sub.currentId.value,
+  () => overlayResetFeed()
 );
-watch(
-  () => current.value?.id,
-  () => {
-    lastSentOrdinal = -2;
-  }
-);
-// 悬浮窗由隐藏转为可见时：强制重推当前句。否则 lastSentOrdinal 可能
-// 停留在当前句上（播放一段时间后才开窗），被 idx===lastSentOrdinal
-// 挡掉，造成"开了窗却没有字幕、直到下一句才有"的首屏空白。
-watch(overlayVisible, (v) => {
-  if (!v) return;
-  lastSentOrdinal = -2;
-  pushCurrentSubtitle();
-});
+watch(sub.subtitles, () => overlayResetFeed());
 
 /** 全局快捷键转发来的动作（主窗口最小化/失焦时依然生效） */
 function onGlobalAction(action: string) {
@@ -365,21 +334,21 @@ onMounted(async () => {
   const u6 = await listen<boolean>("overlay://lock-changed", (e) => {
     overlayLocked.value = !!e.payload;
   });
-  const u7 = await listen<number>("overlay://do-seek", (e) => {
-    seekTo((e.payload ?? 0) / 1000);
-  });
   const u8 = await listen<number>("overlay://step-subtitle", (e) => {
     onStepSubtitle(e.payload ?? 0);
   });
   const u9 = await listen<string>("overlay://global-action", (e) => {
     onGlobalAction(e.payload ?? "");
   });
-  unlisteners.push(u5, u6, u7, u8, u9);
+  unlisteners.push(u5, u6, u8, u9);
   window.addEventListener("keydown", onKeydown);
   refresh();
   // 同步悬浮窗初始状态（Rust 侧是事实来源）
   isOverlayVisible()
-    .then((v) => (overlayVisible.value = v))
+    .then((v) => {
+      overlayVisible.value = v;
+      overlaySetEnabled(v);
+    })
     .catch(() => {});
   isOverlayLocked()
     .then((v) => (overlayLocked.value = v))
