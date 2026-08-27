@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { ref, watch, computed } from "vue";
 import { getSettings, saveSettings, getEnvApiConfig } from "../api/subtitle";
 import { useCaptionStyle } from "../stores/captionStyle";
 import { useShortcuts } from "../stores/shortcuts";
 import { usePlayback } from "../stores/playback";
 import type { ShortcutActionName } from "../types";
+import { useModels, MODEL_META } from "../stores/model";
 
-type TabKey = "appearance" | "playback" | "subtitle" | "translate" | "shortcuts";
+type TabKey = "appearance" | "playback" | "subtitle" | "translate" | "model" | "shortcuts";
 
 const props = defineProps<{ open: boolean; theme: "light" | "dark" | "system" }>();
 const emit = defineEmits<{ close: []; setTheme: [theme: "light" | "dark" | "system"] }>();
@@ -57,11 +58,22 @@ const tabs: { key: TabKey; label: string }[] = [
   { key: "playback", label: "播放" },
   { key: "subtitle", label: "字幕" },
   { key: "translate", label: "翻译" },
+  { key: "model", label: "模型" },
   { key: "shortcuts", label: "快捷键" },
 ];
 
 const sc = useShortcuts();
 const pb = usePlayback();
+const ms = useModels();
+const selectedFileExists = computed(() => {
+  const s = ms.modelState.models.find((m) => m.selected);
+  return !!s && s.file_exists;
+});
+const activePercent = computed(() => {
+  const s = ms.modelState.models.find((m) => m.size === ms.modelState.activeSize);
+  if (!s || !s.total_bytes) return 0;
+  return Math.min(100, Math.round((s.bytes_downloaded / s.total_bytes) * 100));
+});
 
 function keysOf(action: ShortcutActionName): string {
   return sc.shortcuts.value.find((s) => s.action === action)?.keys ?? "";
@@ -127,8 +139,12 @@ async function load() {
 
 watch(
   () => props.open,
-  (open) => {
-    if (open) load();
+  async (open) => {
+    if (open) {
+      await ms.initModel();
+      await ms.loadModel();
+      load(); // 既有：载入翻译/API 设置
+    }
   }
 );
 
@@ -392,6 +408,56 @@ function onClick(e: MouseEvent) {
         <button class="save-btn" :disabled="saving" @click="onSave">
           {{ saving ? "保存中…" : "保存" }}
         </button>
+      </div>
+
+      <div class="section" v-show="activeTab === 'model'">
+        <div class="section-label">模型</div>
+
+        <div v-if="ms.modelState.selected && !selectedFileExists" class="model-warn">
+          尚未下载所选模型「ggml-{{ ms.modelState.selected }}.bin」，转写前请先下载，或在「翻译」页改用云端 API。
+        </div>
+
+        <div class="row model-current">
+          <span class="row-label">当前模型</span>
+          <span class="model-path">ggml-{{ ms.modelState.selected }}.bin</span>
+        </div>
+
+        <div class="model-list">
+          <div v-for="m in ms.modelState.models" :key="m.size" class="sc-item">
+            <span class="sc-label">
+              {{ m.size }}（{{ MODEL_META[m.size] }}）
+              <span v-if="m.selected" class="model-badge">已选</span>
+            </span>
+
+            <span v-if="m.status !== 'downloading'" class="sc-controls">
+              <template v-if="m.file_exists">
+                <button class="sc-key" :class="{ sel: m.selected }" @click="ms.select(m.size)">
+                  {{ m.selected ? "当前" : "选为当前" }}
+                </button>
+                <button class="sc-clear" title="删除模型" @click="ms.remove(m.size)">×</button>
+              </template>
+              <button v-else class="sc-key" @click="ms.download(m.size)">下载</button>
+            </span>
+            <span v-else class="sc-controls">
+              <span class="dl-mid">
+                {{
+                  m.total_bytes
+                    ? Math.round((m.bytes_downloaded / m.total_bytes) * 100) + "%"
+                    : "下载中"
+                }}
+              </span>
+              <button class="sc-clear" title="取消" @click="ms.cancel(m.size)">×</button>
+            </span>
+          </div>
+        </div>
+
+        <div v-if="ms.modelState.activeSize" class="model-progress">
+          <div class="model-bar" :style="{ width: activePercent + '%' }"></div>
+        </div>
+
+        <p class="hint">
+          建议用 small（466MB）兼顾体积与 ASMR 识别率。无 N 卡可跳过本地模型，直接在「翻译」页配置云端 API。
+        </p>
       </div>
 
       <div class="foot-hint">更多设置项将在后续里程碑加入（快捷键、字幕样式等）</div>
@@ -917,5 +983,59 @@ function onClick(e: MouseEvent) {
 .env-hint code {
   font-family: inherit;
   color: var(--accent);
+}
+
+.model-current {
+  margin-bottom: 12px;
+}
+.model-path {
+  font-size: 13px;
+  color: var(--fg-1);
+  font-variant-numeric: tabular-nums;
+}
+.model-warn {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.model-badge {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--accent-dim);
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+.sc-key.sel {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.dl-mid {
+  font-size: 12px;
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+.model-progress {
+  height: 6px;
+  background: var(--bg-2);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.model-bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s ease;
 }
 </style>
