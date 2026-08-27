@@ -7,7 +7,7 @@ import { usePlayback } from "../stores/playback";
 import type { ShortcutActionName } from "../types";
 import { useModels, MODEL_META } from "../stores/model";
 
-type TabKey = "appearance" | "playback" | "subtitle" | "translate" | "model" | "shortcuts";
+type TabKey = "appearance" | "playback" | "subtitle" | "translate" | "model" | "shortcuts" | "vad";
 
 const props = defineProps<{ open: boolean; theme: "light" | "dark" | "system" }>();
 const emit = defineEmits<{ close: []; setTheme: [theme: "light" | "dark" | "system"] }>();
@@ -31,6 +31,10 @@ const providers: Provider[] = [
 const apiBase = ref("");
 const apiKey = ref("");
 const apiModel = ref("deepseek-chat");
+const vadWindowMs = ref(30);
+const vadMinSilenceMs = ref(300);
+const vadMinChunkMs = ref(1000);
+const vadMaxChunkMs = ref(30000);
 const providerIdx = ref(-1); // -1 = 自定义，不匹配任何预设
 const saving = ref(false);
 const showKey = ref(false);
@@ -60,6 +64,7 @@ const tabs: { key: TabKey; label: string }[] = [
   { key: "translate", label: "翻译" },
   { key: "model", label: "模型" },
   { key: "shortcuts", label: "快捷键" },
+  { key: "vad", label: "转写切片" },
 ];
 
 const sc = useShortcuts();
@@ -125,6 +130,10 @@ async function load() {
     apiBase.value = s.api_base ?? "";
     apiKey.value = s.api_key ?? "";
     apiModel.value = s.api_model ?? "";
+    vadWindowMs.value = Number(s.vad_window_ms ?? 30);
+    vadMinSilenceMs.value = Number(s.vad_min_silence_ms ?? 300);
+    vadMinChunkMs.value = Number(s.vad_min_chunk_ms ?? 1000);
+    vadMaxChunkMs.value = Number(s.vad_max_chunk_ms ?? 30000);
     providerIdx.value = matchProvider(apiBase.value, apiModel.value);
   } catch {
     /* ignore */
@@ -155,6 +164,10 @@ async function onSave() {
       api_base: apiBase.value,
       api_key: apiKey.value,
       api_model: apiModel.value,
+      vad_window_ms: String(vadWindowMs.value),
+      vad_min_silence_ms: String(vadMinSilenceMs.value),
+      vad_min_chunk_ms: String(vadMinChunkMs.value),
+      vad_max_chunk_ms: String(vadMaxChunkMs.value),
     });
     emit("close");
   } finally {
@@ -458,6 +471,32 @@ function onClick(e: MouseEvent) {
         <p class="hint">
           建议用 small（466MB）兼顾体积与 ASMR 识别率。无 N 卡可跳过本地模型，直接在「翻译」页配置云端 API。
         </p>
+      </div>
+
+      <div class="section" v-show="activeTab === 'vad'">
+        <div class="section-label">转写切片</div>
+
+        <label class="field">
+          <span>RMS 窗长 (ms)</span>
+          <input v-model.number="vadWindowMs" type="number" min="10" max="200" />
+        </label>
+        <label class="field">
+          <span>最小静音 (ms)</span>
+          <input v-model.number="vadMinSilenceMs" type="number" min="100" max="5000" />
+        </label>
+        <label class="field">
+          <span>最小块长 (ms)</span>
+          <input v-model.number="vadMinChunkMs" type="number" min="200" max="10000" />
+        </label>
+        <label class="field">
+          <span>最大块长 (ms)</span>
+          <input v-model.number="vadMaxChunkMs" type="number" min="1000" max="120000" />
+        </label>
+
+        <p class="hint">切块参数影响转写进度粒度与取消响应速度，默认值即可正常使用。</p>
+        <button class="save-btn" :disabled="saving" @click="onSave">
+          {{ saving ? "保存中…" : "保存" }}
+        </button>
       </div>
 
       <div class="foot-hint">更多设置项将在后续里程碑加入（快捷键、字幕样式等）</div>
