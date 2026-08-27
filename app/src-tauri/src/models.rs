@@ -108,6 +108,61 @@ pub fn resolve_model_path(db: &MediaDb) -> PathBuf {
     model_file_path(&models_dir(), &selected_size(db))
 }
 
+/// 校验 GGUF：非空 + 头 4 字节魔数 == b"ggml"
+fn verify_file(path: &Path) -> bool {
+    let len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    if len == 0 {
+        return false;
+    }
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut head = [0u8; 4];
+    f.read_exact(&mut head).is_ok() && &head == MAGIC
+}
+
+/// 对某档状态做一次改造（不存在则插入默认 Idle 档）
+fn with_dl<R>(size: &str, f: impl FnOnce(&mut Download) -> R) -> Option<R> {
+    let mut g = DOWNLOADS.lock().ok()?;
+    Some(f(g.entry(size.to_string()).or_insert_with(|| Download {
+        size: size.to_string(),
+        status: DlStatus::Idle,
+        bytes_downloaded: 0,
+        total_bytes: 0,
+        error: None,
+    })))
+}
+
+/// 读取某档（深拷贝），无记录则 None
+fn get_dl(size: &str) -> Option<Download> {
+    DOWNLOADS.lock().ok().and_then(|g| g.get(size).cloned())
+}
+
+/// 是否收到取消请求
+fn is_canceled(size: &str) -> bool {
+    CANCEL.lock().map(|g| g.contains(size)).unwrap_or(false)
+}
+
+fn request_cancel(size: &str) {
+    if let Ok(mut g) = CANCEL.lock() {
+        g.insert(size.to_string());
+    }
+}
+
+fn clear_cancel(size: &str) {
+    if let Ok(mut g) = CANCEL.lock() {
+        g.remove(size);
+    }
+}
+
+fn release_active(size: &str) {
+    if let Ok(mut g) = ACTIVE.lock() {
+        if g.as_deref() == Some(size) {
+            *g = None;
+        }
+    }
+}
+
 fn e2<E: std::fmt::Display>(e: E) -> String {
     format!("{e}")
 }
@@ -135,5 +190,21 @@ mod tests {
         let db = MediaDb::open_in_memory().unwrap();
         db.save_setting("whisper_model", "base").unwrap();
         assert_eq!(selected_size(&db), "base");
+    }
+
+    #[test]
+    fn verify_detects_magic() {
+        let dir = tempfile::tempdir().unwrap();
+        let good = dir.path().join("good");
+        std::fs::write(&good, b"ggml###payload").unwrap();
+        assert!(verify_file(&good));
+
+        let bad = dir.path().join("bad");
+        std::fs::write(&bad, b"XXXX###payload").unwrap();
+        assert!(!verify_file(&bad));
+
+        let empty = dir.path().join("empty");
+        std::fs::write(&empty, b"").unwrap();
+        assert!(!verify_file(&empty));
     }
 }
