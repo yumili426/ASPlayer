@@ -201,11 +201,22 @@ pub fn is_overlay_locked(state: State<'_, OverlayState>) -> bool {
     state.locked.load(Ordering::SeqCst)
 }
 
-/// 悬浮窗点击原文 → 请求主窗跳转到该句（毫秒）。暂停与否由主窗决定（保持播放）。
+/// 悬浮窗工具栏 ⏮⏭ → 主窗：上/下一句（±1），复用快捷键既有通道
 #[tauri::command]
-pub fn overlay_request_seek(app: AppHandle, ms: i64) {
+pub fn step_overlay_subtitle(app: AppHandle, delta: i64) {
     if let Some(main) = primary_label(&app) {
-        let _ = app.emit_to(main, "overlay://do-seek", ms);
+        let _ = app.emit_to(main, "overlay://step-subtitle", delta);
+    }
+}
+
+/// 悬浮窗工具栏 ⏯ → 主窗：播放/暂停
+#[tauri::command]
+pub fn overlay_control(app: AppHandle, action: String) {
+    if action != "togglePlay" {
+        return;
+    }
+    if let Some(main) = primary_label(&app) {
+        let _ = app.emit_to(main, "overlay://global-action", action);
     }
 }
 

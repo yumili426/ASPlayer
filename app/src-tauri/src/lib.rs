@@ -286,7 +286,8 @@ pub fn run() {
             floating::is_overlay_locked,
             floating::get_overlay_prefs,
             floating::set_overlay_prefs,
-            floating::overlay_request_seek,
+            floating::step_overlay_subtitle,
+            floating::overlay_control,
             floating::push_overlay_subtitle
         ])
         .build(tauri::generate_context!())
