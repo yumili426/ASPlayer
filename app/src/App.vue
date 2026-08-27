@@ -324,6 +324,8 @@ onMounted(async () => {
     console.log("[ASPlayer] 转写已取消:", mediaId);
     sub.consumeAutoTranslate();
     sub.setStatus("partial", "canceled", sub.progress.value, "已取消，可继续转写");
+    // 取消后重载已写库的切片字幕，否则字幕面板仍是空（Bug：partial 不显示）
+    if (sub.currentId.value === mediaId) sub.load(mediaId);
     refresh().catch(() => {});
   });
   unlisteners.push(u1, u2, u3, u4);
