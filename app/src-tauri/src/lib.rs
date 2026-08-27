@@ -289,7 +289,13 @@ pub fn run() {
             floating::set_overlay_prefs,
             floating::step_overlay_subtitle,
             floating::overlay_control,
-            floating::push_overlay_subtitle
+            floating::push_overlay_subtitle,
+            // M4 模型下载器
+            models::get_models_status,
+            models::download_model,
+            models::cancel_model_download,
+            models::set_model,
+            models::remove_model
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

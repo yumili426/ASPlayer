@@ -337,6 +337,93 @@ fn e2<E: std::fmt::Display>(e: E) -> String {
     format!("{e}")
 }
 
+#[tauri::command]
+pub fn get_models_status(state: State<AppState>) -> Result<Vec<ModelStatus>, String> {
+    let db = state.db.lock().map_err(e2)?;
+    let sel = selected_size(&db);
+    let mut out = Vec::new();
+    for size in MODEL_SIZES {
+        let f = model_file_path(&models_dir(), size);
+        let (file_exists, file_bytes) = match std::fs::metadata(&f) {
+            Ok(m) => (true, m.len()),
+            Err(_) => (false, 0),
+        };
+        let dl = get_dl(size);
+        out.push(ModelStatus {
+            size: size.into(),
+            file_exists,
+            file_bytes,
+            selected: sel == size,
+            status: dl.as_ref().map(|d| d.status.clone()).unwrap_or(DlStatus::Idle),
+            bytes_downloaded: dl.as_ref().map(|d| d.bytes_downloaded).unwrap_or(file_bytes),
+            total_bytes: dl.as_ref().map(|d| d.total_bytes).unwrap_or(0),
+            error: dl.as_ref().and_then(|d| d.error.clone()),
+        });
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub fn download_model(size: String, app: AppHandle) -> Result<(), String> {
+    if !MODEL_SIZES.contains(&size.as_str()) {
+        return Err(format!("未知模型档位: {size}"));
+    }
+    {
+        let mut g = ACTIVE.lock().map_err(e2)?;
+        if g.is_some() {
+            return Err("已有模型下载在进行中".into());
+        }
+        *g = Some(size.clone());
+    }
+    clear_cancel(&size);
+    with_dl(&size, |d| {
+        d.status = DlStatus::Downloading;
+        d.bytes_downloaded = std::fs::metadata(&model_file_path(&models_dir(), &size))
+            .map(|m| m.len())
+            .unwrap_or(0);
+        d.error = None;
+    });
+    std::thread::spawn(move || download_model_inner(app, size));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn cancel_model_download(size: String) -> Result<bool, String> {
+    if !MODEL_SIZES.contains(&size.as_str()) {
+        return Err(format!("未知模型档位: {size}"));
+    }
+    let st = get_dl(&size).map(|d| d.status).unwrap_or(DlStatus::Idle);
+    if st != DlStatus::Downloading {
+        return Ok(false);
+    }
+    request_cancel(&size);
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn set_model(size: String, app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    if !MODEL_SIZES.contains(&size.as_str()) {
+        return Err(format!("未知模型档位: {size}"));
+    }
+    let db = state.db.lock().map_err(e2)?;
+    db.save_setting(SETTING_MODEL, &size).map_err(e2)?;
+    let _ = app.emit(EVENT_SELECTED, &size);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn remove_model(size: String) -> Result<(), String> {
+    if !MODEL_SIZES.contains(&size.as_str()) {
+        return Err(format!("未知模型档位: {size}"));
+    }
+    let f = model_file_path(&models_dir(), &size);
+    match std::fs::remove_file(&f) {
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("删除模型失败: {e}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
