@@ -26,3 +26,22 @@ export function isOverlayLocked() {
 export function pushOverlaySubtitle(text: string, translation: string, startMs: number) {
   return invoke<void>("push_overlay_subtitle", { text, translation, startMs });
 }
+
+/** 悬浮窗工具栏：上/下一句 */
+export function stepOverlaySubtitle(delta: number) {
+  return invoke<void>("step_overlay_subtitle", { delta });
+}
+
+/** 悬浮窗工具栏：播放/暂停（转发主窗） */
+export function overlayPlayPause() {
+  return invoke<void>("overlay_control", { action: "togglePlay" });
+}
+
+/** 读/写悬浮窗偏好（结构体整体写入，Rust 端 serde 缺省补齐） */
+export function getOverlayPrefs() {
+  return invoke<import("../types").OverlayPrefs>("get_overlay_prefs");
+}
+
+export function setOverlayPrefs(prefs: import("../types").OverlayPrefs) {
+  return invoke<void>("set_overlay_prefs", { prefs });
+}

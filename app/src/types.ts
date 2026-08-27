@@ -31,22 +31,19 @@ export interface ProgressEvent {
 export type CaptionPosition = "top" | "center" | "bottom";
 export type CaptionMode = "original" | "bilingual" | "translation";
 
-/** 迷你悬浮窗配置（后端 SQLite settings 单键持久化，修改即广播） */
-export interface OverlayConfig {
-  visible: boolean;
-  fontSize: number; // 14 ~ 48
-  maxLines: number; // 1 ~ 3（原文最大可见行数）
-  backdrop: boolean; // 文字底衬（极淡黑色圆角条），默认关闭
-  mode: CaptionMode; // 悬浮窗独立的字幕显示模式记忆
-}
+export type OverlayDisplayMode = "original" | "bilingual" | "translation";
+export type OverlayGapBehavior = "keep-last" | "fade-5s";
+export const OVERLAY_PRESET_COLORS = [
+  "soft-white", "amber", "rose", "mist-blue", "mint", "lavender",
+] as const;
+export type OverlayPresetColor = (typeof OVERLAY_PRESET_COLORS)[number];
 
-/** 当前句推送给悬浮窗的数据 */
-export interface OverlayCurrent {
-  ordinal: number;
-  startMs: number;
-  endMs: number;
-  text: string;
-  translation: string;
+/** 悬浮窗偏好（后端 settings KV 单键持久化，修改即双窗广播） */
+export interface OverlayPrefs {
+  display_mode: OverlayDisplayMode;
+  trans_color: OverlayPresetColor;
+  gap_behavior: OverlayGapBehavior;
+  font_scale: number; // 0.8 ~ 2.0
 }
 
 export interface CaptionStyle {
