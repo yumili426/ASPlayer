@@ -75,17 +75,6 @@ pub fn request_cancel_transcription(media_id: i64) {
     unregister_transcription(media_id);
 }
 
-/// 解析 whisper 模型路径：环境变量 ASPLAYER_MODEL > 默认 ~/.asplayer/models/ggml-small.bin
-pub fn model_path() -> PathBuf {
-    if let Ok(m) = std::env::var("ASPLAYER_MODEL") {
-        if !m.trim().is_empty() {
-            return PathBuf::from(m);
-        }
-    }
-    let home = std::env::var("USERPROFILE").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".asplayer").join("models").join("ggml-small.bin")
-}
-
 /// 翻译 API 配置
 pub struct ApiConfig {
     pub api_base: String,
@@ -175,7 +164,10 @@ fn transcribe_inner(
     };
     check_canceled(db, media_id)?;
 
-    let model = model_path().to_string_lossy().into_owned();
+    let model = {
+        let g = db.lock().map_err(|e| fail(db, media_id, format!("数据库锁异常: {e}")))?;
+        crate::models::resolve_model_path(&g).to_string_lossy().into_owned()
+    };
     let lang_opt = if lang_str.is_empty() { None } else { Some(lang_str) };
     let segments = match asplayer_transcribe::whisper::transcribe(&model, lang_opt, &samples) {
         Ok(segs) => segs,

@@ -1,6 +1,7 @@
 mod db;
 mod floating;
 mod media;
+mod models;
 mod shortcuts;
 mod transcriber;
 
