@@ -17,7 +17,7 @@
 use crate::floating::{self, OVERLAY_LABEL};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{
-    Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutEvent, ShortcutState,
+    Code, GlobalShortcut, GlobalShortcutExt, Modifiers, Shortcut, ShortcutEvent, ShortcutState,
 };
 
 fn primary_label(app: &AppHandle) -> Option<String> {
@@ -35,44 +35,98 @@ fn pressed(e: &ShortcutEvent) -> bool {
     e.state == ShortcutState::Pressed
 }
 
-/// 注册全部全局快捷键（setup 中调用一次；重复注册会返回 Err，忽略即可保证幂等）
+fn reg(
+    gs: &GlobalShortcut<tauri::Wry>,
+    name: &str,
+    scs: &[(String, Shortcut)],
+    f: impl Fn(&AppHandle, &ShortcutEvent) + Send + Sync + Clone + 'static,
+) {
+    // 注册失败绝不能静默：热键被 Intel 核显旋转/网易云/输入法等占用时，
+    // 用户会以为功能坏了。按候选列表依次降级（Ctrl+Alt+X → Ctrl+Alt+Shift+X）。
+    for (label, sc) in scs {
+        let f = f.clone();
+        match gs.on_shortcut(sc.clone(), move |app, _s, e| f(app, &e)) {
+            Ok(_) => {
+                eprintln!("[ASPlayer][shortcuts] 已注册 {label}（{name}）");
+                return;
+            }
+            Err(e) => eprintln!("[ASPlayer][shortcuts] 注册失败 {label}: {e}"),
+        }
+    }
+    eprintln!("[ASPlayer][shortcuts] {name} 全部候选组合均不可用！");
+}
+
+fn ctrl_alt_shift(key: Code) -> Shortcut {
+    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT), key)
+}
+
+/// 注册全部全局快捷键（setup 中调用一次）
 pub fn register_all(app: &AppHandle) {
     let gs = app.global_shortcut();
 
     // 播放/暂停：直接转发到主窗
-    let _ = gs.on_shortcut(ctrl_alt(Code::Space), |app, _s, e| {
-        if pressed(&e) {
-            if let Some(main) = primary_label(app) {
-                let _ = app.emit_to(main, "overlay://global-action", "togglePlay");
-            }
-        }
-    });
-
-    // 悬浮窗显隐
-    let _ = gs.on_shortcut(ctrl_alt(Code::KeyO), |app, _s, e| {
-        if pressed(&e) {
-            let _ = floating::toggle_overlay_visible(app.clone(), app.state());
-        }
-    });
-
-    // 穿透锁定切换
-    let _ = gs.on_shortcut(ctrl_alt(Code::KeyL), |app, _s, e| {
-        if pressed(&e) {
-            let st = app.state::<floating::OverlayState>();
-            let cur = st.locked.load(std::sync::atomic::Ordering::SeqCst);
-            let _ = floating::set_overlay_locked(app.clone(), st, !cur);
-        }
-    });
-
-    // 上一句 / 下一句：交由主窗依据当前时间计算目标句并 seek
-    for (key, delta) in [(Code::ArrowLeft, -1i32), (Code::ArrowRight, 1i32)] {
-        let _ = gs.on_shortcut(ctrl_alt(key), move |app, _s, e| {
-            if pressed(&e) {
+    reg(
+        &gs,
+        "播放/暂停",
+        &[("Ctrl+Alt+Space".to_string(), ctrl_alt(Code::Space)), ("Ctrl+Alt+Shift+Space".to_string(), ctrl_alt_shift(Code::Space))],
+        |app, e| {
+            if pressed(e) {
                 if let Some(main) = primary_label(app) {
-                    let _ = app.emit_to(main, "overlay://step-subtitle", delta);
+                    let _ = app.emit_to(main, "overlay://global-action", "togglePlay");
                 }
             }
-        });
+        },
+    );
+
+    // 悬浮窗显隐
+    reg(
+        &gs,
+        "悬浮窗显隐",
+        &[("Ctrl+Alt+O".to_string(), ctrl_alt(Code::KeyO)), ("Ctrl+Alt+Shift+O".to_string(), ctrl_alt_shift(Code::KeyO))],
+        |app, e| {
+            if pressed(e) {
+                let _ = floating::toggle_overlay_visible(app.clone(), app.state());
+            }
+        },
+    );
+
+    // 穿透锁定切换
+    reg(
+        &gs,
+        "悬浮窗锁定",
+        &[("Ctrl+Alt+L".to_string(), ctrl_alt(Code::KeyL)), ("Ctrl+Alt+Shift+L".to_string(), ctrl_alt_shift(Code::KeyL))],
+        |app, e| {
+            if pressed(e) {
+                let st = app.state::<floating::OverlayState>();
+                let cur = st.locked.load(std::sync::atomic::Ordering::SeqCst);
+                match floating::set_overlay_locked(app.clone(), st, !cur) {
+                    Ok(_) => eprintln!("[ASPlayer][shortcuts] lock -> {}", !cur),
+                    Err(err) => eprintln!("[ASPlayer][shortcuts] set_overlay_locked 出错: {err}"),
+                }
+            }
+        },
+    );
+
+    // 上一句 / 下一句：交由主窗依据当前时间计算目标句并 seek
+    for (key, delta, dir) in [
+        (Code::ArrowLeft, -1i32, "Left"),
+        (Code::ArrowRight, 1i32, "Right"),
+    ] {
+        reg(
+            &gs,
+            dir,
+            &[
+                (format!("Ctrl+Alt+{dir}"), ctrl_alt(key)),
+                (format!("Ctrl+Alt+Shift+{dir}"), ctrl_alt_shift(key)),
+            ],
+            move |app, e| {
+                if pressed(e) {
+                    if let Some(main) = primary_label(app) {
+                        let _ = app.emit_to(main, "overlay://step-subtitle", delta);
+                    }
+                }
+            },
+        );
     }
 }
 
