@@ -295,7 +295,8 @@ onUnmounted(() => {
       :current-id="current?.id ?? null"
       :loading="loading"
       @play="play"
-      @import="importFolder"
+      @import="importFiles"
+      @import-folder="importFolder"
       @refresh="refresh"
       @close="showPlaylist = false"
     />

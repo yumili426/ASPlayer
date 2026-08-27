@@ -12,11 +12,13 @@ const props = defineProps<{
 const emit = defineEmits<{
   play: [item: MediaItem];
   import: [];
+  importFolder: [];
   refresh: [];
   close: [];
 }>();
 
 const ctxMenu = ref<{ x: number; y: number; item: MediaItem } | null>(null);
+const confirmDelete = ref<MediaItem | null>(null);
 
 function onContextMenu(e: MouseEvent, item: MediaItem) {
   const w = 180;
@@ -55,9 +57,19 @@ async function removeFromList(item: MediaItem) {
   }
 }
 
-async function deleteFile(item: MediaItem) {
+function deleteFile(item: MediaItem) {
   closeCtx();
-  if (!window.confirm(`确定要删除该文件并从列表移除吗？\n${item.title}`)) return;
+  confirmDelete.value = item;
+}
+
+function cancelDelete() {
+  confirmDelete.value = null;
+}
+
+async function doDelete() {
+  const item = confirmDelete.value;
+  if (!item) return;
+  confirmDelete.value = null;
   try {
     await invoke<void>("delete_media_file", { id: item.id });
     emit("refresh");
@@ -115,9 +127,12 @@ function fmtDuration(ms: number): string {
         <span class="pl-count">{{ loading ? "…" : `${sortedItems.length} 个` }}</span>
       </div>
       <div class="pl-actions">
-        <button class="tool-btn" title="导入" @click="emit('import')">
+        <button class="tool-btn" title="导入文件" @click="emit('import')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>
-          <span>导入</span>
+          <span>文件</span>
+        </button>
+        <button class="tool-btn" title="导入文件夹" @click="emit('importFolder')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
         </button>
         <button class="tool-btn" title="刷新" @click="emit('refresh')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg>
@@ -142,7 +157,7 @@ function fmtDuration(ms: number): string {
     <!-- 空态 / 列表 -->
     <div v-if="items.length === 0" class="pl-empty">
       <p>媒体库还是空的</p>
-      <p class="pl-empty-sub">点击右上角 ＋ 导入媒体文件夹</p>
+      <p class="pl-empty-sub">点击右上角导入文件或文件夹</p>
     </div>
 
     <div v-else-if="sortedItems.length === 0" class="pl-empty">
@@ -189,6 +204,22 @@ function fmtDuration(ms: number): string {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
           删除文件
         </button>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="confirmDelete" class="dlg-overlay" @click.self="cancelDelete">
+        <div class="dlg">
+          <div class="dlg-title">删除文件</div>
+          <p class="dlg-body">
+            此操作将<strong>永久删除磁盘上的文件</strong>并从媒体库移除，删除后<strong>无法恢复</strong>，请谨慎选择。<br />
+            确认删除：<span class="dlg-name">{{ confirmDelete.title }}</span>
+          </p>
+          <div class="dlg-actions">
+            <button class="dlg-btn" @click="cancelDelete">取消</button>
+            <button class="dlg-btn danger" @click="doDelete">删除</button>
+          </div>
+        </div>
       </div>
     </Teleport>
   </aside>
@@ -460,5 +491,74 @@ function fmtDuration(ms: number): string {
 
 .pl-ctx-item.danger:hover {
   background: rgba(255, 69, 58, 0.12);
+}
+
+.dlg-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dlg {
+  width: min(360px, 90vw);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+
+.dlg-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fg-1);
+  margin-bottom: 10px;
+}
+
+.dlg-body {
+  font-size: 13px;
+  color: var(--fg-2);
+  line-height: 1.7;
+  margin-bottom: 18px;
+}
+
+.dlg-body strong {
+  color: #ff453a;
+}
+
+.dlg-name {
+  color: var(--fg-1);
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.dlg-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dlg-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--bg-2);
+  color: var(--fg-1);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, filter 0.15s ease;
+}
+
+.dlg-btn:hover {
+  filter: brightness(1.15);
+}
+
+.dlg-btn.danger {
+  background: #ff453a;
+  color: #fff;
 }
 </style>
