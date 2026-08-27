@@ -3,6 +3,9 @@
  * 唯一职责：根据媒体元素时钟计算当前句 → 内容变化才推给悬浮窗。
  * 三重时间源：timeupdate（常规）/ seeked（跳转后强制）/ 播放中 500ms 轮询（兜底）；
  * 内容级去重：与上次实际推送的 文本+start_ms 全等比较，序号类状态彻底退场。
+ *
+ * 引擎恒开（不随悬浮窗显隐挂起）：实测把开关绑在跨端同步的可见性状态上，
+ * 一旦两窗漂移即整链静默（Bug #4 真凶）。每句才一条 IPC，隐藏窗收包代价可忽略。
  */
 import { pushOverlaySubtitle } from "./api/overlay";
 import { useSubtitle } from "./stores/subtitle";
@@ -17,7 +20,6 @@ const CLEAR = { key: "\0clear\0" };
 const sub = useSubtitle();
 
 let media: HTMLMediaElement | null = null;
-let enabled = false;
 let pollTimer: number | null = null;
 let abortCtrl: AbortController | null = null;
 let lastKey: string | null = null; // 上次推送的内容指纹；CLEAR.key 或 `${start}${text}${tr}`
@@ -52,7 +54,7 @@ function tickGap(inGap: boolean): void {
 
 /** 核心：算当前句并与上次推送比对。force 忽略去重缓存（seek 场景） */
 export function sync(force = false): void {
-  if (!enabled || !media) return;
+  if (!media) return;
   const tMs = Math.round(media.currentTime * 1000);
   const sentence = sentenceAt(tMs);
   tickGap(sentence === null);
@@ -105,15 +107,9 @@ export function attachMedia(el: HTMLMediaElement | null): void {
   if (!el.paused) startPolling();
 }
 
-/** 悬浮窗隐藏时挂起推送；重新可见时强制补推当前句（避免停留在陈旧去重缓存） */
-export function setEnabled(v: boolean): void {
-  enabled = v;
-  if (v) sync(true);
-}
-
 /** 切换文件 / 字幕列表变化后调用：清掉悬浮窗残留内容 */
 export function resetFeed(): void {
   lastKey = null;
   gapSince = -1;
-  if (enabled) pushClear();
+  pushClear();
 }

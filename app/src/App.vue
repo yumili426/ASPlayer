@@ -14,7 +14,7 @@ import {
   isOverlayVisible,
   toggleOverlayVisible,
 } from "./api/overlay";
-import { setEnabled as overlaySetEnabled, resetFeed as overlayResetFeed } from "./overlayFeed";
+import { resetFeed as overlayResetFeed } from "./overlayFeed";
 import {
   onTranscribeProgress,
   onTranscribeDone,
@@ -247,16 +247,16 @@ const overlayLocked = ref(false);
 
 async function onOverlayToggle() {
   try {
+    // 不做本地乐观取反：Rust 是可见性唯一事实来源，成功后经
+    // overlay://visibility 广播回推本 ref，避免双写漂移（Bug #4 真凶之一）
     await toggleOverlayVisible();
-    overlayVisible.value = !overlayVisible.value;
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error("[ASPlayer] 悬浮窗显隐切换失败:", e);
   }
 }
 
-// 悬浮窗显隐开关直接驱动推送引擎挂起/恢复
-watch(overlayVisible, overlaySetEnabled);
+// 悬浮窗显隐只做图标状态展示；推送引擎恒开，不依赖此状态
 // 换文件或字幕数据刷新后：清空悬浮窗残留，等待下一次真实句子
 watch(
   () => sub.currentId.value,
@@ -345,10 +345,7 @@ onMounted(async () => {
   refresh();
   // 同步悬浮窗初始状态（Rust 侧是事实来源）
   isOverlayVisible()
-    .then((v) => {
-      overlayVisible.value = v;
-      overlaySetEnabled(v);
-    })
+    .then((v) => (overlayVisible.value = v))
     .catch(() => {});
   isOverlayLocked()
     .then((v) => (overlayLocked.value = v))
