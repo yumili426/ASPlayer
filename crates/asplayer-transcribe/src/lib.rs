@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod srt;
+pub mod vad;
 pub mod whisper;
 pub mod translate;
 
