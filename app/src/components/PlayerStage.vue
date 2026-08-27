@@ -11,7 +11,7 @@ import { cancelTranscribe, transcribeMedia, translateMedia } from "../api/subtit
 const sub = useSubtitle();
 const pb = usePlayback();
 
-const props = defineProps<{ item: MediaItem | null; items: MediaItem[] }>();
+const props = defineProps<{ item: MediaItem | null; items: MediaItem[]; overlayOn?: boolean }>();
 const emit = defineEmits<{
   import: [];
   play: [item: MediaItem];
@@ -19,6 +19,7 @@ const emit = defineEmits<{
   togglePlaylist: [];
   toggleSubtitle: [];
   fullscreenChange: [fullscreen: boolean];
+  overlayToggle: [];
 }>();
 
 const mediaEl = ref<HTMLVideoElement | HTMLAudioElement | null>(null);
@@ -166,6 +167,13 @@ function seekBy(delta: number) {
   const el = mediaEl.value;
   if (!el) return;
   el.currentTime = Math.max(0, Math.min(el.duration || 0, el.currentTime + delta));
+}
+
+function seekToSeconds(seconds: number) {
+  // 绝对时间跳转（悬浮窗点击句子 / 全局上一句下一句用）
+  const el = mediaEl.value;
+  if (!el) return;
+  el.currentTime = Math.max(0, Math.min(el.duration || 0, seconds));
 }
 
 function onSeekInput(e: Event) {
@@ -360,7 +368,7 @@ function onTimeUpdate() {
   }
 }
 
-defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleFullscreen });
+defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjustVolume, toggleFullscreen });
 </script>
 
 
@@ -486,6 +494,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
                 <svg v-if="pb.playback.loopMode === 'single'" fill="none" viewBox="0 0 24 24" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>
                 <svg v-else fill="none" viewBox="0 0 24 24" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
               </button>
+              <button class="ctl overlay-toggle" :class="{ active: props.overlayOn }" title="迷你悬浮字幕窗（Ctrl+Alt+O 显隐 · Ctrl+Alt+L 穿透锁定）" @click="emit('overlayToggle')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5"/><rect x="13" y="13" width="8" height="6" rx="1"/></svg></button>
             </div>
         <div class="btn-group">
           <button class="ctl seek" title="后退 15 秒" :disabled="!item" @click="seekBy(-15)">
@@ -973,6 +982,10 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+.ctl.overlay-toggle.active {
+  background: var(--accent-dim);
 }
 
 .ctl.seek {

@@ -1,5 +1,7 @@
 mod db;
+mod floating;
 mod media;
+mod shortcuts;
 mod transcriber;
 
 use db::MediaDb;
@@ -242,12 +244,20 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             resolve_ffmpeg();
             let dir: PathBuf = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let db = MediaDb::open(&dir.join("asplayer.db"))?;
             app.manage(AppState { db: Arc::new(Mutex::new(db)) });
+
+            // M3：悬浮字幕窗（启动即隐藏预载，首次显示无白屏）+ 全局快捷键
+            let _ = app.manage(floating::OverlayState::default());
+            if let Err(e) = floating::create_overlay_window(app.handle()) {
+                eprintln!("[ASPlayer] 创建悬浮窗失败: {e}");
+            }
+            shortcuts::register_all(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -267,9 +277,23 @@ pub fn run() {
             get_subtitle_status,
             save_settings,
             get_settings,
-            get_env_api_config
+            get_env_api_config,
+            // M3 悬浮窗
+            floating::set_overlay_visible,
+            floating::toggle_overlay_visible,
+            floating::is_overlay_visible,
+            floating::set_overlay_locked,
+            floating::is_overlay_locked,
+            floating::overlay_request_seek,
+            floating::push_overlay_subtitle
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // 应用退出时注销全局快捷键（避免热键残留到其他程序）
+            if let tauri::RunEvent::Exit = event {
+                shortcuts::unregister_all(app);
+            }
+        });
 }
 

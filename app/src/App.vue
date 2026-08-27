@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import PlayerStage from "./components/PlayerStage.vue";
 import PlaylistPanel from "./components/PlaylistPanel.vue";
@@ -8,6 +8,13 @@ import SettingsPanel from "./components/SettingsPanel.vue";
 import type { MediaItem } from "./types";
 import { useSubtitle } from "./stores/subtitle";
 import { useShortcuts } from "./stores/shortcuts";
+import { listen } from "@tauri-apps/api/event";
+import {
+  isOverlayLocked,
+  isOverlayVisible,
+  pushOverlaySubtitle,
+  toggleOverlayVisible,
+} from "./api/overlay";
 import {
   onTranscribeProgress,
   onTranscribeDone,
@@ -233,6 +240,70 @@ function onFullscreenChange(v: boolean) {
   stageFullscreen.value = v;
 }
 
+// ---- M3 迷你悬浮字幕窗 ----
+
+const overlayVisible = ref(false);
+const overlayLocked = ref(false);
+/** 最近一次推送到悬浮窗的句序号；-2 表示未知（换文件/换列表后强制重发） */
+let lastSentOrdinal = -2;
+
+async function onOverlayToggle() {
+  try {
+    await toggleOverlayVisible();
+    overlayVisible.value = !overlayVisible.value;
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 悬浮窗显隐切换失败:", e);
+  }
+}
+
+/**
+ * 歌词式推送当前句到悬浮窗（后端中继）。
+ * 只在句序号变化时才 invoke，把 IPC 频率压到每句一次；
+ * 句间空隙保留上一句内容，观感接近内嵌字幕。
+ */
+function pushCurrentSubtitle() {
+  if (!overlayVisible.value || !current.value) return;
+  const t = sub.currentTime.value * 1000;
+  const list = sub.subtitles.value;
+  const idx = list.findIndex((s) => t >= s.start_ms && t < s.end_ms);
+  if (idx < 0 || idx === lastSentOrdinal) return;
+  lastSentOrdinal = idx;
+  const s = list[idx];
+  pushOverlaySubtitle(s.text, s.translation, s.start_ms).catch(() => {});
+}
+
+watch(() => sub.currentTime.value, pushCurrentSubtitle);
+watch(
+  () => sub.subtitles.value,
+  () => {
+    lastSentOrdinal = -2;
+  }
+);
+watch(
+  () => current.value?.id,
+  () => {
+    lastSentOrdinal = -2;
+  }
+);
+// 悬浮窗由隐藏转为可见时：强制重推当前句。否则 lastSentOrdinal 可能
+// 停留在当前句上（播放一段时间后才开窗），被 idx===lastSentOrdinal
+// 挡掉，造成"开了窗却没有字幕、直到下一句才有"的首屏空白。
+watch(overlayVisible, (v) => {
+  if (!v) return;
+  lastSentOrdinal = -2;
+  pushCurrentSubtitle();
+});
+
+/** 全局快捷键转发来的动作（主窗口最小化/失焦时依然生效） */
+function onGlobalAction(action: string) {
+  if (action === "togglePlay") stageRef.value?.togglePlay();
+}
+
+function onStepSubtitle(delta: number) {
+  seekToSubtitle(delta >= 0 ? 1 : -1);
+}
+
 // 字幕面板/工具栏的"取消转写"：受理取消请求（whisper 推理不可中断，
 // 最迟在本轮推理结束后退出并广播 transcribe://canceled）
 async function onCancelTranscribe() {
@@ -287,8 +358,32 @@ onMounted(async () => {
     refresh().catch(() => {});
   });
   unlisteners.push(u1, u2, u3, u4);
+  // M3 悬浮窗事件接线（全部走后端中继）
+  const u5 = await listen<boolean>("overlay://visibility", (e) => {
+    overlayVisible.value = !!e.payload;
+  });
+  const u6 = await listen<boolean>("overlay://lock-changed", (e) => {
+    overlayLocked.value = !!e.payload;
+  });
+  const u7 = await listen<number>("overlay://do-seek", (e) => {
+    seekTo((e.payload ?? 0) / 1000);
+  });
+  const u8 = await listen<number>("overlay://step-subtitle", (e) => {
+    onStepSubtitle(e.payload ?? 0);
+  });
+  const u9 = await listen<string>("overlay://global-action", (e) => {
+    onGlobalAction(e.payload ?? "");
+  });
+  unlisteners.push(u5, u6, u7, u8, u9);
   window.addEventListener("keydown", onKeydown);
   refresh();
+  // 同步悬浮窗初始状态（Rust 侧是事实来源）
+  isOverlayVisible()
+    .then((v) => (overlayVisible.value = v))
+    .catch(() => {});
+  isOverlayLocked()
+    .then((v) => (overlayLocked.value = v))
+    .catch(() => {});
 });
 
 onUnmounted(() => {
@@ -304,12 +399,14 @@ onUnmounted(() => {
       ref="stageRef"
       :item="current"
       :items="items"
+      :overlay-on="overlayVisible"
       @import="importFiles"
       @play="play"
       @settings="settingsOpen = true"
       @toggle-playlist="togglePlaylist"
       @toggle-subtitle="toggleSubtitle"
       @fullscreen-change="onFullscreenChange"
+      @overlay-toggle="onOverlayToggle"
     />
     <SubtitlePanel
       v-if="showSubtitle && !stageFullscreen"
