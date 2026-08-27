@@ -122,11 +122,12 @@ fn delete_media_file(id: i64, state: State<AppState>) -> CmdResult<()> {
     db.remove_media(id).map_err(err_str)
 }
 
-/// 触发后台转写（立即返回，进度/结果走事件）
+/// 触发后台转写（立即返回，进度/结果走事件）。resume=true 从断点继续，false 清空重转。
 #[tauri::command]
 fn transcribe_media(
     id: i64,
     lang: Option<String>,
+    resume: bool,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
@@ -136,7 +137,7 @@ fn transcribe_media(
     }
     let db = state.db.clone();
     std::thread::spawn(move || {
-        transcriber::run_transcription(app, db, id, lang);
+        transcriber::run_transcription(app, db, id, lang, resume);
     });
     Ok(())
 }
@@ -151,9 +152,8 @@ fn translate_media(id: i64, app: AppHandle, state: State<'_, AppState>) -> CmdRe
     Ok(())
 }
 
-/// 请求取消某媒体的转写任务。
-/// whisper 推理为单次整体调用不可中断：取消最迟在推理结束后生效，
-/// 届时按“是否已有字幕”回退状态并广播 transcribe://canceled 事件。
+/// 请求取消某媒体的转写任务。whisper 逐块解码，取消在一个块粒度内生效。
+/// 落地：有断点 → partial（保留已转写块，可续跑）；无断点 → none。
 /// 返回 true 表示取消请求已受理（或本就无任务、顺手修正了残留状态）。
 #[tauri::command]
 fn cancel_transcribe(id: i64, state: State<AppState>) -> CmdResult<bool> {
@@ -161,11 +161,16 @@ fn cancel_transcribe(id: i64, state: State<AppState>) -> CmdResult<bool> {
         transcriber::request_cancel_transcription(id);
         return Ok(true);
     }
-    // 不在运行中：修正可能残留的 transcribing 状态（如上次进程中途退出的恢复场景）
+    // 不在运行中：修正残留的 transcribing 状态（崩溃恢复）→ 有断点置 partial，否则 none
     let db = state.db.lock().map_err(err_str)?;
     let (status, _) = db.get_subtitle_status(id).map_err(err_str)?;
     if status == "transcribing" {
-        db.rollback_after_cancel(id).map_err(err_str)?;
+        let next = db.get_transcribe_next_ms(id).map_err(err_str)?;
+        if next > 0 {
+            db.set_subtitle_status(id, "partial", "").map_err(err_str)?;
+        } else {
+            db.set_subtitle_status(id, "none", "").map_err(err_str)?;
+        }
         return Ok(true);
     }
     Ok(false)

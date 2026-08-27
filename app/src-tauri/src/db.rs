@@ -190,29 +190,6 @@ impl MediaDb {
         Ok(())
     }
 
-    /// 取消转写后回退状态：已有字幕→恢复 done（保留旧字幕）；否则→none。
-    /// 返回回退后的状态字符串（"done" | "none"）。
-    pub fn rollback_after_cancel(&self, media_id: i64) -> rusqlite::Result<String> {
-        let has: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM subtitles WHERE media_id = ?1",
-            [&media_id.to_string()],
-            |r| r.get(0),
-        )?;
-        if has > 0 {
-            self.conn.execute(
-                "UPDATE media_files SET subtitle_status = 'done' WHERE id = ?1",
-                [&media_id.to_string()],
-            )?;
-            Ok("done".into())
-        } else {
-            self.conn.execute(
-                "UPDATE media_files SET subtitle_status = 'none', subtitle_lang = '' WHERE id = ?1",
-                [&media_id.to_string()],
-            )?;
-            Ok("none".into())
-        }
-    }
-
     /// 清空某媒体的所有字幕（重新转写前调用）
     pub fn clear_subtitles(&self, media_id: i64) -> rusqlite::Result<()> {
         self.conn.execute(
