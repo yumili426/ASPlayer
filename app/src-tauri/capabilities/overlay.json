@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "overlay",
+  "description": "M3 迷你悬浮字幕窗能力：基础命令调用与事件监听",
+  "windows": ["overlay"],
+  "permissions": ["core:default"]
+}
