@@ -1,16 +1,24 @@
 <script setup lang="ts">
 /**
- * M3 迷你悬浮字幕窗（设计 §9.2）
- * - 置顶透明窗口内的纯展示组件，不持有播放器状态
- * - 数据来源：后端转发的 overlay://subtitle（由主窗逐句推送）
- * - 点击原文 → 请求跳转到该句句首（经后端转发回主窗执行）
- * - 锁定态仅影响样式提示；真实鼠标穿透由 Rust 侧 set_ignore_cursor_events 控制
+ * M3 悬浮字幕窗 · 桌面歌词化重写（设计文档 2026-08-27 §2/§3）
+ * - Quiet Glass 玻璃条：原文大字白 + 译文预设色，整条可拖拽（锁定态除外）
+ * - 悬停工具栏：⏮⏯⏭ / 显示模式三态 / ⚙就地设置 / 锁定 / 关闭
+ * - 显示模式在本窗渲染取舍：主窗恒推 原文+译文 全量，切换零通信
+ * - 字幕数据来源：后端中继 overlay://subtitle（由主窗 overlayFeed 推送）
  */
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useCaptionStyle } from "../stores/captionStyle";
+import {
+  TRANSLATION_HEX,
+  loadOverlayPrefs,
+  overlayPrefs,
+  patchOverlayPrefs,
+  watchOverlayPrefs,
+} from "../stores/overlayPrefs";
+import { overlayPlayPause, stepOverlaySubtitle } from "../api/overlay";
+import type { OverlayDisplayMode } from "../types";
 
 interface SubtitlePayload {
   text: string;
@@ -18,61 +26,102 @@ interface SubtitlePayload {
   start_ms: number;
 }
 
-const cap = useCaptionStyle();
+const appWindow = getCurrentWindow();
 const text = ref("");
 const translation = ref("");
 const startMs = ref(0);
 const locked = ref(false);
+const tbVisible = ref(false);   // 工具栏可见性（悬停 2s 延迟隐藏）
+const panelOpen = ref(false);   // ⚙迷你面板
+const receivedFirst = ref(false); // 是否收到过第一条真句（决定提示条显隐）
 const unlisteners: (() => void)[] = [];
 
-const hasContent = computed(() => text.value.length > 0 || translation.value.length > 0);
+let hideTimer: number | null = null;
 
-// 悬浮窗字号随主窗字幕设置的缩放倍率（两窗共享 localStorage，同一 origin）
-const boxStyle = computed(() => ({
-  color: cap.captionStyle.color,
-  background: `rgba(8, 10, 14, ${cap.captionStyle.bgOpacity})`,
-}));
-const originalStyle = computed(() => ({ fontSize: `${18 * cap.captionStyle.fontScale}px` }));
-const translationStyle = computed(() => ({ fontSize: `${15 * cap.captionStyle.fontScale}px` }));
+/** 按显示模式取舍渲染行；缺译文回退原文，绝不空白 */
+const lines = computed<{ cls: "orig" | "trans"; text: string }[]>(() => {
+  const o = text.value.trim();
+  const tr = translation.value.trim();
+  if (overlayPrefs.display_mode === "original") return o ? [{ cls: "orig", text: o }] : [];
+  if (overlayPrefs.display_mode === "translation") {
+    const t = tr || o;
+    return t ? [{ cls: "trans", text: t }] : [];
+  }
+  const out: { cls: "orig" | "trans"; text: string }[] = [];
+  if (o) out.push({ cls: "orig", text: o });
+  if (tr && tr !== o) out.push({ cls: "trans", text: tr });
+  return out;
+});
 
-const appWindow = getCurrentWindow();
+const transColor = computed(
+  () => TRANSLATION_HEX[overlayPrefs.trans_color] ?? TRANSLATION_HEX["soft-white"]
+);
+const origSize = computed(() => `${22 * overlayPrefs.font_scale}px`);
+const transSize = computed(() => `${16 * overlayPrefs.font_scale}px`);
 
-/** 按住 HUD 把手拖动窗口（start-dragging 权限含于 core:default） */
-function startDrag() {
-  if (locked.value) return;
+// ---- 手势与工具栏 ----
+
+/** 整条玻璃卡拖拽（点击跳转功能已按设计移除） */
+function onDragStart(e: PointerEvent) {
+  if (locked.value || e.button !== 0) return;
   appWindow.startDragging().catch(() => {});
 }
 
-/** 关闭悬浮窗：走后端命令，Rust 是显隐事实来源（会反推 visibility 到主窗） */
+function tbShow() {
+  if (locked.value) return;
+  tbVisible.value = true;
+  if (hideTimer !== null) window.clearTimeout(hideTimer);
+}
+
+function tbHide() {
+  if (hideTimer !== null) window.clearTimeout(hideTimer);
+  hideTimer = window.setTimeout(() => {
+    tbVisible.value = false;
+    panelOpen.value = false;
+  }, 2000);
+}
+
+function setMode(m: OverlayDisplayMode) {
+  patchOverlayPrefs({ display_mode: m });
+}
+
+function lockOverlay() {
+  invoke("set_overlay_locked", { locked: true }).catch(() => {});
+}
+
 function closeOverlay() {
   invoke("set_overlay_visible", { visible: false }).catch(() => {});
 }
 
-function seekToSentence() {
-  if (!hasContent.value) return;
-  invoke("overlay_request_seek", { ms: startMs.value }).catch(() => {});
-}
+const MODE_ITEMS: { key: OverlayDisplayMode; label: string }[] = [
+  { key: "original", label: "原文" },
+  { key: "bilingual", label: "双语" },
+  { key: "translation", label: "译文" },
+];
 
 onMounted(async () => {
-  // 监听注册失败 = 收不到任何推送（ACL/平台异常），显式打日志便于排查
   try {
     unlisteners.push(
       await listen<SubtitlePayload>("overlay://subtitle", (e) => {
         const p = e.payload ?? { text: "", translation: "", start_ms: 0 };
+        if (p.text || p.translation) receivedFirst.value = true;
         text.value = p.text ?? "";
         translation.value = p.translation ?? "";
         startMs.value = p.start_ms ?? 0;
-      })
-    );
-    unlisteners.push(
+      }),
       await listen<boolean>("overlay://lock-changed", (e) => {
         locked.value = !!e.payload;
-      })
+        if (locked.value) {
+          tbVisible.value = false;
+          panelOpen.value = false;
+        }
+      }),
+      await watchOverlayPrefs()
     );
   } catch (err) {
     console.error("[overlay] 事件监听注册失败:", err);
   }
-  // 初始锁定状态探测（启动时后端可能已处于锁定态）
+  await loadOverlayPrefs();
   try {
     locked.value = await invoke<boolean>("is_overlay_locked");
   } catch {
@@ -80,27 +129,105 @@ onMounted(async () => {
   }
 });
 
-onUnmounted(() => unlisteners.forEach((u) => u()));
+onUnmounted(() => {
+  unlisteners.forEach((u) => u());
+  if (hideTimer !== null) window.clearTimeout(hideTimer);
+});
 </script>
 
 <template>
-  <div class="overlay-root" :class="{ locked }">
-    <!-- HUD：仅解锁态出现；左侧把手拖动，右侧关闭 -->
-    <div v-if="!locked" class="overlay-hud">
-      <span class="hud-grip" title="按住拖动悬浮窗" @mousedown.prevent="startDrag"></span>
-      <button class="hud-close" title="关闭悬浮字幕窗" @click.stop="closeOverlay">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-      </button>
-    </div>
-    <Transition name="fade">
-      <div v-if="hasContent" class="overlay-box" :style="boxStyle">
-        <p class="line original" :style="originalStyle" title="点击回到本句开头" @click.stop="seekToSentence">
-          {{ text }}
-        </p>
-        <p v-if="translation" class="line translation" :style="translationStyle">{{ translation }}</p>
+  <div
+    class="overlay-root"
+    :class="{ locked }"
+    @mouseenter="tbShow"
+    @mouseleave="tbHide"
+  >
+    <!-- 从未收到过字幕时的引导提示 -->
+    <div v-if="!receivedFirst" class="boot-hint">开始播放后此处显示字幕</div>
+
+    <!-- 玻璃歌词条 -->
+    <div
+      v-else
+      class="glass"
+      :class="{ dragging: !locked }"
+      @pointerdown="onDragStart"
+    >
+      <!-- 悬停工具栏：交互区阻断拖拽冒泡 -->
+      <div
+        v-show="tbVisible"
+        class="tb"
+        @pointerdown.stop
+      >
+        <button class="tbtn" title="上一句" @click="stepOverlaySubtitle(-1)">⏮</button>
+        <button class="tbtn" title="播放/暂停" @click="overlayPlayPause">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 5l12 7-12 7z"/></svg>
+        </button>
+        <button class="tbtn" title="下一句" @click="stepOverlaySubtitle(1)">⏭</button>
+        <span class="sep"></span>
+        <div class="seg">
+          <button
+            v-for="m in MODE_ITEMS"
+            :key="m.key"
+            class="seg-btn"
+            :class="{ on: overlayPrefs.display_mode === m.key }"
+            @click="setMode(m.key)"
+          >{{ m.label }}</button>
+        </div>
+        <span class="sep"></span>
+        <div
+          v-show="panelOpen"
+          class="panel"
+          @pointerdown.stop
+        >
+          <div class="panel-title">译文颜色</div>
+          <div class="swatches">
+            <button
+              v-for="(hex, key) in TRANSLATION_HEX"
+              :key="key"
+              class="swatch"
+              :class="{ on: overlayPrefs.trans_color === key }"
+              :style="{ background: hex }"
+              :title="key"
+              @click="patchOverlayPrefs({ trans_color: key })"
+            ></button>
+          </div>
+          <div class="panel-title">句间空隙</div>
+          <select
+            class="sel"
+            :value="overlayPrefs.gap_behavior"
+            @change="patchOverlayPrefs({ gap_behavior: ($event.target as HTMLSelectElement).value as 'keep-last' | 'fade-5s' })"
+          >
+            <option value="keep-last">保留上一句</option>
+            <option value="fade-5s">5 秒后淡出</option>
+          </select>
+          <div class="panel-title">字号 {{ Math.round(overlayPrefs.font_scale * 100) }}%</div>
+          <input
+            class="font-range"
+            type="range" min="0.8" max="2" step="0.05"
+            :value="overlayPrefs.font_scale"
+            @change="patchOverlayPrefs({ font_scale: Number(($event.target as HTMLInputElement).value) })"
+          />
+        </div>
+        <button class="tbtn" title="设置" @click="panelOpen = !panelOpen">⚙</button>
+        <button class="tbtn" title="锁定（鼠标穿透，Ctrl+Alt+L 解锁）" @click="lockOverlay">🔒</button>
+        <button class="tbtn danger" title="关闭悬浮字幕窗" @click="closeOverlay">✕</button>
       </div>
-      <div v-else class="overlay-hint">开始播放后此处显示字幕</div>
-    </Transition>
+
+      <Transition name="linefade" mode="out-in">
+        <div v-if="lines.length" :key="startMs" class="lines">
+          <p
+            v-for="(l, i) in lines"
+            :key="i"
+            class="line"
+            :class="l.cls"
+            :style="l.cls === 'orig'
+              ? { fontSize: origSize }
+              : { fontSize: transSize, color: transColor }"
+          >{{ l.text }}</p>
+        </div>
+        <div v-else :key="'clear'" class="cleared"></div>
+      </Transition>
+    </div>
   </div>
 </template>
 
@@ -108,50 +235,175 @@ onUnmounted(() => unlisteners.forEach((u) => u()));
 .overlay-root {
   width: 100vw;
   height: 100vh;
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   overflow: hidden;
   user-select: none;
-  border-radius: 12px;
 }
 
-.overlay-root.locked .overlay-box {
-  opacity: 0.92;
+/* Quiet Glass 玻璃条：毛玻璃不生效时自然降级为半透明深底（观感相近） */
+.glass {
+  width: calc(100vw - 28px);
+  max-height: calc(100vh - 16px);
+  border-radius: 18px;
+  background: rgba(12, 14, 20, 0.55);
+  backdrop-filter: blur(16px) saturate(130%);
+  outline: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.45);
+  padding: 34px 20px 18px;
+  cursor: grab;
+}
+.glass.dragging:active {
+  cursor: grabbing;
+}
+.overlay-root.locked .glass {
+  cursor: default;
 }
 
-.overlay-box {
-  max-width: calc(100vw - 24px);
-  padding: 10px 16px;
-  border-radius: 12px;
-  text-align: center;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
-  transition: opacity 0.15s ease;
+/* ---- 悬停工具栏 ---- */
+.tb {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.07);
+  white-space: nowrap;
+  z-index: 3;
 }
-
-.line {
-  margin: 2px 0;
-  line-height: 1.45;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
-  word-break: break-word;
+.overlay-root.locked .tb {
+  display: none;
 }
-
-.original {
-  font-weight: 600;
+.tbtn {
+  width: 26px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(235, 235, 240, 0.85);
+  font-size: 12px;
   cursor: pointer;
 }
-
-.original:hover {
-  text-decoration: underline;
+.tbtn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+.tbtn.danger:hover {
+  background: #e5484d;
+  color: #fff;
+}
+.tbtn svg {
+  width: 12px;
+  height: 12px;
+}
+.sep {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.seg-btn {
+  border: none;
+  border-radius: 6px;
+  padding: 2px 8px;
+  background: transparent;
+  color: rgba(235, 235, 240, 0.55);
+  font-size: 11px;
+  cursor: pointer;
+}
+.seg-btn.on {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-weight: 600;
 }
 
-.translation {
-  opacity: 0.88;
+/* ---- ⚙就地迷你面板 ---- */
+.panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 208px;
+  padding: 10px 12px 12px;
+  border-radius: 13px;
+  background: rgba(12, 14, 20, 0.82);
+  outline: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  cursor: default;
+}
+.panel-title {
+  margin: 7px 0 5px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: rgba(235, 235, 240, 0.45);
+}
+.swatches {
+  display: flex;
+  gap: 7px;
+}
+.swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.swatch.on {
+  border-color: #fff;
+}
+.sel {
+  width: 100%;
+  border: none;
+  border-radius: 7px;
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(235, 235, 240, 0.85);
+  font-size: 11px;
+  cursor: pointer;
+}
+.font-range {
+  width: 100%;
+  accent-color: var(--accent, #d98d5f);
 }
 
-.overlay-hint {
+/* ---- 文字行 ---- */
+.lines {
+  text-align: center;
+  line-height: 1.55;
+}
+.line {
+  margin: 0;
+  word-break: break-word;
+}
+.line.orig {
+  color: #fff;
+  font-weight: 600;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+}
+.line.trans {
+  margin-top: 5px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+.cleared {
+  height: 8px; /* 占位保住布局，视觉完全透明 */
+}
+.boot-hint {
   padding: 8px 14px;
   border-radius: 10px;
   background: rgba(8, 10, 14, 0.55);
@@ -159,76 +411,12 @@ onUnmounted(() => unlisteners.forEach((u) => u()));
   font-size: 13px;
 }
 
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.18s ease;
+.linefade-enter-active,
+.linefade-leave-active {
+  transition: opacity 0.17s ease;
 }
-
-.fade-enter-from,
-.fade-leave-to {
+.linefade-enter-from,
+.linefade-leave-to {
   opacity: 0;
-}
-
-/* ---- HUD：拖动把手 + 关闭（悬停窗体或空态时浮现） ---- */
-.overlay-hud {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 5px;
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0));
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  pointer-events: none;
-}
-
-.overlay-root:hover .overlay-hud,
-.overlay-root:not(:has(.overlay-box)) .overlay-hud {
-  opacity: 1;
-}
-
-/* HUD 可见时可交互；隐藏时不挡点击 */
-.overlay-root:hover .overlay-hud > *,
-.overlay-root:not(:has(.overlay-box)) .overlay-hud > * {
-  pointer-events: auto;
-}
-
-.hud-grip {
-  width: 36px;
-  height: 13px;
-  cursor: grab;
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.55) 1px, transparent 1.4px);
-  background-size: 6px 6px;
-}
-
-.hud-grip:active {
-  cursor: grabbing;
-}
-
-.hud-close {
-  width: 17px;
-  height: 17px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.16);
-  color: rgba(255, 255, 255, 0.78);
-}
-
-.hud-close:hover {
-  background: #e5484d;
-  color: #fff;
-}
-
-.hud-close svg {
-  width: 9px;
-  height: 9px;
 }
 </style>
