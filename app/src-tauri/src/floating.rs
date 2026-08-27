@@ -5,7 +5,10 @@
 //! 主窗增加跨窗口事件的 ACL 权限。
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use crate::db::MediaDb;
+use crate::AppState;
 
 pub const OVERLAY_LABEL: &str = "overlay";
 
@@ -14,6 +17,69 @@ pub const OVERLAY_LABEL: &str = "overlay";
 pub struct OverlayState {
     pub visible: AtomicBool,
     pub locked: AtomicBool,
+}
+
+// ---------- 偏好持久化（设计 §3）：settings KV 单键 JSON ----------
+
+pub const OVERLAY_PREFS_KEY: &str = "asplayer.overlay.prefs.v1";
+
+/// 悬浮窗偏好。容器级 #[serde(default)]：JSON 缺字段自动补 Default。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OverlayPrefs {
+    /// original | bilingual | translation
+    pub display_mode: String,
+    /// soft-white | amber | rose | mist-blue | mint | lavender
+    pub trans_color: String,
+    /// keep-last | fade-5s
+    pub gap_behavior: String,
+    /// 0.8 ~ 2.0
+    pub font_scale: f64,
+}
+
+impl Default for OverlayPrefs {
+    fn default() -> Self {
+        Self {
+            display_mode: "bilingual".into(),
+            trans_color: "soft-white".into(),
+            gap_behavior: "keep-last".into(),
+            font_scale: 1.0,
+        }
+    }
+}
+
+/// 从 DB 读偏好；键不存在返回默认，坏 JSON 显式报错
+fn load_prefs(db: &MediaDb) -> Result<OverlayPrefs, String> {
+    match db.get_setting(OVERLAY_PREFS_KEY) {
+        Ok(Some(raw)) => serde_json::from_str(&raw).map_err(|e| format!("解析悬浮窗偏好失败: {e}")),
+        Ok(None) => Ok(OverlayPrefs::default()),
+        Err(e) => Err(format!("{e}")),
+    }
+}
+
+#[tauri::command]
+pub fn get_overlay_prefs(state: State<'_, AppState>) -> Result<OverlayPrefs, String> {
+    let db = state.db.lock().map_err(err_s)?;
+    load_prefs(&db)
+}
+
+/// 写库成功后向悬浮窗与主窗双向广播新值（两窗 reactive 共享同一事实）
+#[tauri::command]
+pub fn set_overlay_prefs(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    prefs: OverlayPrefs,
+) -> Result<(), String> {
+    {
+        let db = state.db.lock().map_err(err_s)?;
+        let raw = serde_json::to_string(&prefs).map_err(err_s)?;
+        db.save_setting(OVERLAY_PREFS_KEY, &raw).map_err(err_s)?;
+    }
+    let _ = app.emit_to(OVERLAY_LABEL, "overlay://prefs-changed", prefs.clone());
+    if let Some(main) = primary_label(&app) {
+        let _ = app.emit_to(main, "overlay://prefs-changed", prefs);
+    }
+    Ok(())
 }
 
 /// 后端 → 悬浮窗的当前句字幕载荷
@@ -158,4 +224,38 @@ pub fn push_overlay_subtitle(app: AppHandle, text: String, translation: String, 
 
 fn err_s<E: std::fmt::Display>(e: E) -> String {
     format!("{e}")
+}
+
+#[cfg(test)]
+mod prefs_tests {
+    use super::*;
+
+    #[test]
+    fn prefs_partial_json_fills_defaults() {
+        let p: OverlayPrefs = serde_json::from_str(r#"{"display_mode":"original"}"#).unwrap();
+        assert_eq!(p.display_mode, "original");
+        assert_eq!(p.trans_color, "soft-white");
+        assert_eq!(p.gap_behavior, "keep-last");
+        assert_eq!(p.font_scale, 1.0);
+    }
+
+    #[test]
+    fn prefs_roundtrip_keeps_fields() {
+        let p = OverlayPrefs {
+            trans_color: "amber".into(),
+            font_scale: 1.4,
+            ..Default::default()
+        };
+        let back: OverlayPrefs =
+            serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+        assert_eq!(back, p);
+        assert_eq!(back.trans_color, "amber");
+        assert_eq!(back.font_scale, 1.4);
+    }
+
+    #[test]
+    fn prefs_invalid_json_rejected_not_default() {
+        // 坏数据必须显式报错而非静默回落（上层决定如何兜底）
+        assert!(serde_json::from_str::<OverlayPrefs>("not-json").is_err());
+    }
 }

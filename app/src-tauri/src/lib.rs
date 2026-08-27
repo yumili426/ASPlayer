@@ -284,6 +284,8 @@ pub fn run() {
             floating::is_overlay_visible,
             floating::set_overlay_locked,
             floating::is_overlay_locked,
+            floating::get_overlay_prefs,
+            floating::set_overlay_prefs,
             floating::overlay_request_seek,
             floating::push_overlay_subtitle
         ])
