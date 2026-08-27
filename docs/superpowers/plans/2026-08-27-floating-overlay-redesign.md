@@ -8,9 +8,10 @@
 
 **Tech Stack:** Tauri 2 (Rust) · Vue 3 `<script setup>` TS · SQLite(settings 表) · Tauri event 中继。
 
-**实施注意（对规格的两处落地差异）：**
+**实施注意（对规格的三处落地差异）：**
 1. 规格 §5 提到更新 `capabilities/overlay.json` ACL —— 经验证**不需要**：现悬浮窗 capabilities 仅 `core:default` 就已能调用 `set_overlay_visible` 等全部应用自定义命令（Tauri v2 自有命令不经 ACL 网关），本计划不改该文件。
 2. 空 payload（gap 清屏）期间窗口完全透明。此时拖拽不可用（无可视面），属已知权衡；用户仍可全局快捷键 Ctrl+Alt+O 隐藏或等下一句浮现。
+3. **验收期返工（均已落地）**：Task 6/7 的 `setEnabled` 显隐门控在实测中复现 Bug #4——可见性双源漂移导致引擎被永久挂起，已改为引擎恒开 + Rust 单一事实源；锁定解锁从"仅快捷键"升级为网易云式悬停解锁钮（Rust 光标探测 + 临时解除穿透）；快捷键注册失败改为可见日志并自动降级 Ctrl+Alt+Shift 变体。
 
 ---
 
