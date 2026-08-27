@@ -346,13 +346,13 @@ fn verify_file(path: &Path) -> bool {
 /// 对某档状态做一次改造（不存在则插入默认 Idle 档）
 fn with_dl<R>(size: &str, f: impl FnOnce(&mut Download) -> R) -> Option<R> {
     let mut g = DOWNLOADS.lock().ok()?;
-    f(g.entry(size.to_string()).or_insert_with(|| Download {
+    Some(f(g.entry(size.to_string()).or_insert_with(|| Download {
         size: size.to_string(),
         status: DlStatus::Idle,
         bytes_downloaded: 0,
         total_bytes: 0,
         error: None,
-    }))
+    })))
 }
 
 /// 读取某档（深拷贝），无记录则 None
