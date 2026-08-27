@@ -25,6 +25,7 @@ pub struct MediaItem {
     pub subtitle_status: String, // "none" | "transcribing" | "done" | "error" | "translating"
     pub subtitle_lang: String,   // 原文语言，如 "ja"
     pub subtitle_count: i64,     // 已转写字幕段数
+    pub transcribe_next_ms: i64, // 转写断点（0 = 无）
     pub speed: f64,              // 每文件记住的播放速度（默认 1.0）
     pub volume: f64,             // 每文件记住的音量 0.0-1.0（默认 1.0）
 }

@@ -57,7 +57,8 @@ impl MediaDb {
         )?;
         // 迁移已存在的旧库：为其补充 M2 新增的列（CREATE TABLE IF NOT EXISTS 不会改旧表）
         Self::migrate(conn)?;
-        Self::migrate_playback_params(conn)
+        Self::migrate_playback_params(conn)?;
+        Self::migrate_transcribe(conn)
     }
 
     /// 幂等迁移：给 media_files 补齐缺失的列（老版本数据库升级用）。
@@ -76,6 +77,11 @@ impl MediaDb {
         if !cols.iter().any(|c| c == "file_size") {
             conn.execute_batch(
                 "ALTER TABLE media_files ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
+        if !cols.iter().any(|c| c == "transcribe_next_ms") {
+            conn.execute_batch(
+                "ALTER TABLE media_files ADD COLUMN transcribe_next_ms INTEGER NOT NULL DEFAULT 0;",
             )?;
         }
         Ok(())
@@ -116,7 +122,8 @@ impl MediaDb {
             "SELECT m.id, m.path, m.title, m.media_type, m.duration_ms, m.playback_position,
                     m.file_size, m.subtitle_status, m.subtitle_lang,
                     (SELECT COUNT(*) FROM subtitles s WHERE s.media_id = m.id),
-                    COALESCE(m.speed, 1.0), COALESCE(m.volume, 1.0)
+                    COALESCE(m.speed, 1.0), COALESCE(m.volume, 1.0),
+                    m.transcribe_next_ms
              FROM media_files m ORDER BY m.added_at DESC, m.id DESC",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -131,6 +138,7 @@ impl MediaDb {
                 subtitle_status: r.get(7)?,
                 subtitle_lang: r.get(8)?,
                 subtitle_count: r.get(9)?,
+                transcribe_next_ms: r.get(12)?,
                 speed: r.get(10)?,
                 volume: r.get(11)?,
             })
@@ -356,6 +364,36 @@ impl MediaDb {
         let mut stmt = self.conn.prepare("SELECT key, value FROM settings")?;
         let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
         rows.collect()
+    }
+
+    /// 幂等迁移：给 subtitles 补 UNIQUE(media_id, start_ms)（先按该组合去重）。
+    /// 这是 save_subtitle 的 ON CONFLICT DO UPDATE 真正生效、支撑续跑幂等写的前提。
+    pub fn migrate_transcribe(conn: &Connection) -> rusqlite::Result<()> {
+        conn.execute_batch(
+            "DELETE FROM subtitles WHERE id NOT IN (
+                SELECT MIN(id) FROM subtitles GROUP BY media_id, start_ms
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_sub_unique ON subtitles(media_id, start_ms);",
+        )?;
+        Ok(())
+    }
+
+    /// 读取某媒体已转写的音频毫秒断点（0 = 无断点）
+    pub fn get_transcribe_next_ms(&self, id: i64) -> rusqlite::Result<i64> {
+        self.conn.query_row(
+            "SELECT transcribe_next_ms FROM media_files WHERE id = ?1",
+            [&id.to_string()],
+            |r| r.get(0),
+        )
+    }
+
+    /// 写入某媒体的转写断点（完成后置 0 清除）
+    pub fn set_transcribe_next_ms(&self, id: i64, next_ms: i64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE media_files SET transcribe_next_ms = ?1 WHERE id = ?2",
+            rusqlite::params![next_ms, id],
+        )?;
+        Ok(())
     }
 }
 
