@@ -2,8 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ProgressEvent, Subtitle } from "../types";
 
-export function transcribeMedia(id: number, lang?: string) {
-  return invoke<void>("transcribe_media", { id, ...(lang ? { lang } : {}) });
+export function transcribeMedia(id: number, lang?: string, resume = false) {
+  return invoke<void>("transcribe_media", { id, resume, ...(lang ? { lang } : {}) });
 }
 
 export function translateMedia(id: number) {

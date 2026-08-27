@@ -323,7 +323,7 @@ onMounted(async () => {
     // eslint-disable-next-line no-console
     console.log("[ASPlayer] 转写已取消:", mediaId);
     sub.consumeAutoTranslate();
-    sub.setStatus("none", "canceled", 0, "已取消转写");
+    sub.setStatus("partial", "canceled", sub.progress.value, "已取消，可继续转写");
     refresh().catch(() => {});
   });
   unlisteners.push(u1, u2, u3, u4);

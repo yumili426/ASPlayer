@@ -6,9 +6,10 @@ export interface MediaItem {
   duration_ms: number;
   playback_position: number;
   file_size: number;
-  subtitle_status: "none" | "transcribing" | "done" | "error" | "translating";
+  subtitle_status: "none" | "transcribing" | "done" | "error" | "translating" | "partial";
   subtitle_lang: string;
   subtitle_count: number;
+  transcribe_next_ms: number;
   speed: number;
   volume: number;
 }
