@@ -97,6 +97,27 @@ fn update_media_duration(id: i64, duration_ms: i64, state: State<AppState>) -> C
     db.update_media_duration(id, duration_ms).map_err(err_str)
 }
 
+/// 从媒体库移除某条目（不删除本地文件）
+#[tauri::command]
+fn remove_media(id: i64, state: State<AppState>) -> CmdResult<()> {
+    let db = state.db.lock().map_err(err_str)?;
+    db.remove_media(id).map_err(err_str)
+}
+
+/// 删除本地文件并从媒体库移除（文件缺失/无权限时不中断）
+#[tauri::command]
+fn delete_media_file(id: i64, state: State<AppState>) -> CmdResult<()> {
+    let db = state.db.lock().map_err(err_str)?;
+    let path = match db.media_path(id) {
+        Ok((p, _title)) => Some(p),
+        Err(_) => None, // 记录已不存在，仅继续清理
+    };
+    if let Some(p) = path {
+        let _ = std::fs::remove_file(&p);
+    }
+    db.remove_media(id).map_err(err_str)
+}
+
 /// 触发后台转写（立即返回，进度/结果走事件）
 #[tauri::command]
 fn transcribe_media(
@@ -196,6 +217,8 @@ pub fn run() {
             list_media,
             save_playback_position,
             update_media_duration,
+            remove_media,
+            delete_media_file,
             transcribe_media,
             translate_media,
             get_subtitles,

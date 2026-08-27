@@ -124,6 +124,15 @@ impl MediaDb {
         Ok(())
     }
 
+    /// 从库中移除某媒体（级联删除其字幕）
+    pub fn remove_media(&self, id: i64) -> rusqlite::Result<()> {
+        self.conn
+            .execute("DELETE FROM subtitles WHERE media_id = ?1", [&id.to_string()])?;
+        self.conn
+            .execute("DELETE FROM media_files WHERE id = ?1", [&id.to_string()])?;
+        Ok(())
+    }
+
     /// 清空某媒体的所有字幕（重新转写前调用）
     pub fn clear_subtitles(&self, media_id: i64) -> rusqlite::Result<()> {
         self.conn.execute(

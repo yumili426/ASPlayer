@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { MediaItem } from "../types";
 
 const props = defineProps<{
@@ -13,6 +15,60 @@ const emit = defineEmits<{
   refresh: [];
   close: [];
 }>();
+
+const ctxMenu = ref<{ x: number; y: number; item: MediaItem } | null>(null);
+
+function onContextMenu(e: MouseEvent, item: MediaItem) {
+  const w = 180;
+  const h = 172;
+  const x = Math.min(e.clientX, window.innerWidth - w - 8);
+  const y = Math.min(e.clientY, window.innerHeight - h - 8);
+  ctxMenu.value = { x, y, item };
+}
+
+function closeCtx() {
+  ctxMenu.value = null;
+}
+
+function playItem(item: MediaItem) {
+  emit("play", item);
+  closeCtx();
+}
+
+async function revealInFolder(item: MediaItem) {
+  closeCtx();
+  try {
+    await revealItemInDir(item.path);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function removeFromList(item: MediaItem) {
+  closeCtx();
+  try {
+    await invoke<void>("remove_media", { id: item.id });
+    emit("refresh");
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 从列表移除失败:", e);
+  }
+}
+
+async function deleteFile(item: MediaItem) {
+  closeCtx();
+  if (!window.confirm(`确定要删除该文件并从列表移除吗？\n${item.title}`)) return;
+  try {
+    await invoke<void>("delete_media_file", { id: item.id });
+    emit("refresh");
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 删除文件失败:", e);
+  }
+}
+
+onMounted(() => window.addEventListener("click", closeCtx));
+onBeforeUnmount(() => window.removeEventListener("click", closeCtx));
 
 const search = ref("");
 const sortBy = ref<"added" | "title" | "duration" | "subtitle">("added");
@@ -101,6 +157,7 @@ function fmtDuration(ms: number): string {
         class="pl-item"
         :class="{ active: item.id === currentId }"
         @click="emit('play', item)"
+        @contextmenu.prevent="onContextMenu($event, item)"
       >
         <span class="pl-num">{{ item.id === currentId ? "▶" : i + 1 }}</span>
         <span class="pl-name">{{ item.title }}</span>
@@ -108,6 +165,32 @@ function fmtDuration(ms: number): string {
         <span class="pl-dur">{{ fmtDuration(item.duration_ms) }}</span>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="ctxMenu"
+        class="pl-ctx"
+        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+        @click.stop
+      >
+        <button class="pl-ctx-item" @click="playItem(ctxMenu!.item)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5l12 7-12 7z"/></svg>
+          播放
+        </button>
+        <button class="pl-ctx-item" @click="revealInFolder(ctxMenu!.item)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          在文件夹中显示
+        </button>
+        <button class="pl-ctx-item" @click="removeFromList(ctxMenu!.item)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>
+          从列表移除
+        </button>
+        <button class="pl-ctx-item danger" @click="deleteFile(ctxMenu!.item)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+          删除文件
+        </button>
+      </div>
+    </Teleport>
   </aside>
 </template>
 
@@ -329,5 +412,53 @@ function fmtDuration(ms: number): string {
   line-height: 1.3;
   margin-left: auto;
   margin-right: 6px;
+}
+
+.pl-ctx {
+  position: fixed;
+  z-index: 999;
+  min-width: 176px;
+  padding: 6px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pl-ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fg-1);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.pl-ctx-item:hover {
+  background: var(--accent-dim);
+}
+
+.pl-ctx-item svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+}
+
+.pl-ctx-item.danger {
+  color: #ff453a;
+}
+
+.pl-ctx-item.danger:hover {
+  background: rgba(255, 69, 58, 0.12);
 }
 </style>
