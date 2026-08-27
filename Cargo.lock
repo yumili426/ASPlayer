@@ -115,6 +115,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "asplayer-transcribe",
+ "reqwest 0.12.28",
  "rusqlite",
  "serde",
  "serde_json",

@@ -8,7 +8,7 @@ name = "asplayer_transcribe"
 path = "src/lib.rs"
 
 [dependencies]
-whisper-rs = "0.13"
+whisper-rs = { version = "0.13", features = ["raw-api"] }
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 hound = "3.5"
