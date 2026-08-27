@@ -73,7 +73,8 @@ fn upsert_media_list(files: &[PathBuf], state: &State<AppState>) -> CmdResult<()
             .unwrap_or("untitled")
             .to_string();
         let mtype = media::classify_media(f).unwrap_or("audio");
-        db.upsert_media(&path_str, &title, mtype).map_err(err_str)?;
+        let file_size = std::fs::metadata(f).map(|m| m.len() as i64).unwrap_or(0);
+        db.upsert_media(&path_str, &title, mtype, file_size).map_err(err_str)?;
     }
     Ok(())
 }
@@ -126,6 +127,10 @@ fn transcribe_media(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<()> {
+    // 同一媒体同时只允许一个转写任务（后台线程内也会兜底校验）
+    if transcriber::transcription_running(id) {
+        return Err("该媒体已有转写任务在进行中".into());
+    }
     let db = state.db.clone();
     std::thread::spawn(move || {
         transcriber::run_transcription(app, db, id, lang);
@@ -141,6 +146,40 @@ fn translate_media(id: i64, app: AppHandle, state: State<'_, AppState>) -> CmdRe
         transcriber::run_translation(app, db, id);
     });
     Ok(())
+}
+
+/// 请求取消某媒体的转写任务。
+/// whisper 推理为单次整体调用不可中断：取消最迟在推理结束后生效，
+/// 届时按“是否已有字幕”回退状态并广播 transcribe://canceled 事件。
+/// 返回 true 表示取消请求已受理（或本就无任务、顺手修正了残留状态）。
+#[tauri::command]
+fn cancel_transcribe(id: i64, state: State<AppState>) -> CmdResult<bool> {
+    if transcriber::transcription_running(id) {
+        transcriber::request_cancel_transcription(id);
+        return Ok(true);
+    }
+    // 不在运行中：修正可能残留的 transcribing 状态（如上次进程中途退出的恢复场景）
+    let db = state.db.lock().map_err(err_str)?;
+    let (status, _) = db.get_subtitle_status(id).map_err(err_str)?;
+    if status == "transcribing" {
+        db.rollback_after_cancel(id).map_err(err_str)?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+/// 保存每文件播放参数（速度/音量），前端变更后防抖调用
+#[tauri::command]
+fn save_playback_params(id: i64, speed: f64, volume: f64, state: State<AppState>) -> CmdResult<()> {
+    let db = state.db.lock().map_err(err_str)?;
+    db.save_playback_params(id, speed, volume).map_err(err_str)
+}
+
+/// 读取每文件播放参数（速度/音量），无记录时返回 (1.0, 1.0)
+#[tauri::command]
+fn get_playback_params(id: i64, state: State<AppState>) -> CmdResult<(f64, f64)> {
+    let db = state.db.lock().map_err(err_str)?;
+    db.get_playback_params(id).map_err(err_str)
 }
 
 /// 读取某媒体的字幕
@@ -221,6 +260,9 @@ pub fn run() {
             delete_media_file,
             transcribe_media,
             translate_media,
+            cancel_transcribe,
+            save_playback_params,
+            get_playback_params,
             get_subtitles,
             get_subtitle_status,
             save_settings,

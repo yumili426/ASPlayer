@@ -12,7 +12,7 @@ const props = defineProps<{
   message: string;
 }>();
 
-const emit = defineEmits<{ close: []; seek: [t: number] }>();
+const emit = defineEmits<{ close: []; seek: [t: number]; cancel: [] }>();
 
 const cap = useCaptionStyle();
 const mode = computed(() => cap.captionStyle.mode);
@@ -73,6 +73,8 @@ function stageLabel() {
         <div class="sp-progress-fill" :style="{ width: progress + '%' }"></div>
       </div>
       <p v-if="message" class="sp-progress-msg">{{ message }}</p>
+      <!-- 仅转写阶段可取消（翻译暂不支持中断）；whisper 推理不可中断，最迟在推理结束后生效 -->
+      <button v-if="status === 'transcribing'" class="sp-cancel" @click="emit('cancel')">取消转写</button>
     </div>
 
     <!-- 错误 -->
@@ -233,6 +235,25 @@ function stageLabel() {
   margin-top: 8px;
   font-size: 12px;
   color: var(--fg-3);
+}
+
+/* 取消转写按钮 */
+.sp-cancel {
+  margin-top: 10px;
+  align-self: flex-start;
+  padding: 4px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: 6px;
+  border: 1px solid rgba(229, 72, 77, 0.45);
+  background: transparent;
+  color: #e5484d;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.sp-cancel:hover {
+  background: rgba(229, 72, 77, 0.1);
+  border-color: #e5484d;
 }
 
 /* 空态 */

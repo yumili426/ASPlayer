@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import CaptionPanel from "./CaptionPanel.vue";
 import type { MediaItem } from "../types";
 import { useSubtitle } from "../stores/subtitle";
 import { usePlayback } from "../stores/playback";
-import { transcribeMedia, translateMedia } from "../api/subtitle";
+import { cancelTranscribe, transcribeMedia, translateMedia } from "../api/subtitle";
 
 const sub = useSubtitle();
 const pb = usePlayback();
@@ -18,6 +18,7 @@ const emit = defineEmits<{
   settings: [];
   togglePlaylist: [];
   toggleSubtitle: [];
+  fullscreenChange: [fullscreen: boolean];
 }>();
 
 const mediaEl = ref<HTMLVideoElement | HTMLAudioElement | null>(null);
@@ -29,6 +30,9 @@ const volume = ref(1);
 const muted = ref(false);
 const appWindow = getCurrentWindow();
 const isFullscreen = ref(false);
+// 全屏时控制条自动隐藏：进入先显示约 2 秒，移动鼠标重新唤出
+const controlsVisible = ref(true);
+let controlsHideTimer: number | null = null;
 const volTrack = ref<HTMLDivElement | null>(null);
 const showVolOsd = ref(false);
 const showVolPop = ref(false);
@@ -74,24 +78,75 @@ onMounted(() => {
     .catch(() => {});
 });
 onBeforeUnmount(() => document.removeEventListener("click", onRateDocClick));
+onBeforeUnmount(() => {
+  if (controlsHideTimer !== null) window.clearTimeout(controlsHideTimer);
+});
 watch(
   () => props.item?.id,
   (id) => {
     requestAnimationFrame(restorePosition);
-    if (id) sub.load(id);
-    else sub.reset();
+    if (id) {
+      sub.load(id);
+      void restoreParams(id);
+    } else {
+      sub.reset();
+    }
   }
 );
+
+// ---- 每文件播放参数记忆（设计 §4：记住每文件的播放位置/速度） ----
+
+/** 切换文件时读回该文件保存的速度/音量并应用 */
+async function restoreParams(id: number) {
+  try {
+    const [s, v] = await invoke<[number, number]>("get_playback_params", { id });
+    if (isFinite(s) && s > 0 && s <= 4 && s !== rate.value) applyRate(s);
+    if (isFinite(v) && v >= 0 && v <= 1) setVolume(v);
+  } catch {
+    /* 无记录/读取失败则保持当前值 */
+  }
+}
+
+/** 变更后防抖写回数据库 */
+let saveParamsTimer: number | null = null;
+function scheduleSaveParams() {
+  const id = props.item?.id;
+  if (id == null) return;
+  if (saveParamsTimer !== null) window.clearTimeout(saveParamsTimer);
+  saveParamsTimer = window.setTimeout(() => {
+    saveParamsTimer = null;
+    invoke("save_playback_params", { id, speed: rate.value, volume: volume.value }).catch(() => {});
+  }, 800);
+}
 
 watch(mediaEl, (el) => {
   if (el) applyVolume();
 });
 
+const transcribing = computed(() => sub.status.value === "transcribing");
+
 async function doTranscribe(withTranslate: boolean) {
-  if (!props.item) return;
+  if (!props.item || transcribing.value) return;
   sub.setStatus("transcribing", "transcribe", 0, "正在转写…");
   if (withTranslate) sub.requestAutoTranslate(props.item.id);
-  await transcribeMedia(props.item.id);
+  try {
+    await transcribeMedia(props.item.id);
+  } catch (e) {
+    // 后端拒绝（如重复触发）时恢复状态并展示原因
+    console.error("[ASPlayer] 转写启动失败:", e);
+    sub.setStatus("error", "", 0, String(e));
+  }
+}
+
+async function doCancelTranscribe() {
+  if (!props.item) return;
+  // whisper 推理不可中断：请求受理后最迟在当前推理结束后退出
+  sub.setStatus("transcribing", "cancel", sub.progress.value, "已请求取消，等待当前步骤结束…");
+  try {
+    await cancelTranscribe(props.item.id);
+  } catch (e) {
+    console.error("[ASPlayer] 取消转写失败:", e);
+  }
 }
 
 async function doTranslate() {
@@ -154,6 +209,7 @@ function setVolume(v: number) {
     if (volume.value > 0 && el.muted) el.muted = false;
   }
   flashVolumeOsd();
+  scheduleSaveParams();
 }
 
 function toggleMute() {
@@ -208,10 +264,44 @@ async function toggleFullscreen() {
     const next = !isFullscreen.value;
     await appWindow.setFullscreen(next);
     isFullscreen.value = next;
+    emit("fullscreenChange", next);
   } catch (e) {
     console.error("[ASPlayer] 切换全屏失败:", e);
   }
 }
+
+function scheduleHideControls() {
+  if (controlsHideTimer !== null) window.clearTimeout(controlsHideTimer);
+  controlsHideTimer = window.setTimeout(() => {
+    controlsHideTimer = null;
+    // 倍速/音量弹层打开时不隐藏，稍后重试；暂停时保持常显
+    if (showRateMenu.value || showVolPop.value) {
+      scheduleHideControls();
+      return;
+    }
+    if (isFullscreen.value && playing.value) controlsVisible.value = false;
+  }, 2000);
+}
+
+function onStageMouseMove() {
+  if (!isFullscreen.value) return;
+  controlsVisible.value = true;
+  scheduleHideControls();
+}
+
+watch(isFullscreen, (fs) => {
+  controlsVisible.value = true;
+  if (controlsHideTimer !== null) {
+    window.clearTimeout(controlsHideTimer);
+    controlsHideTimer = null;
+  }
+  if (fs) scheduleHideControls();
+});
+
+watch(playing, (p) => {
+  // 暂停期间保持常显；恢复播放后重新计时隐藏
+  if (isFullscreen.value && p && controlsVisible.value) scheduleHideControls();
+});
 
 function applyRate(r: number) {
   rate.value = r;
@@ -226,6 +316,7 @@ function toggleRateMenu() {
 function selectRate(r: number) {
   applyRate(r);
   showRateMenu.value = false;
+  scheduleSaveParams();
 }
 
 function onRateDocClick(e: MouseEvent) {
@@ -274,25 +365,31 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
 
 
 <template>
-  <main class="stage">
-    <div class="stage-topbar">
+  <main
+    class="stage"
+    :class="{ 'fs-hide-cursor': isFullscreen && !controlsVisible }"
+    @mousemove="onStageMouseMove"
+  >
+    <div class="stage-topbar" v-show="!isFullscreen">
       <span class="stage-title">ASPlayer</span>
       <div class="toolbar">
         <button class="iconbtn" title="播放列表面板" @click="emit('togglePlaylist')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
         <button class="iconbtn" title="字幕面板" @click="emit('toggleSubtitle')" :class="{ active: captionOn }"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M11 10h6"/></svg></button>
-        <button class="iconbtn" title="转写" @click="doTranscribe(false)" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10"/><path d="m8 9 4 4 4-4"/><path d="M4 17v2h16v-2"/></svg></button>
-        <button class="iconbtn" title="转写并翻译" @click="doTranscribe(true)" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg></button>
+        <button class="iconbtn" title="转写" @click="doTranscribe(false)" :disabled="!item || transcribing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10"/><path d="m8 9 4 4 4-4"/><path d="M4 17v2h16v-2"/></svg></button>
+        <button class="iconbtn" title="转写并翻译" @click="doTranscribe(true)" :disabled="!item || transcribing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg></button>
+        <button v-if="transcribing" class="iconbtn" title="取消转写（whisper 推理中不可立即中断，最迟在本轮推理结束后生效）" @click="doCancelTranscribe"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:#e5484d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg></button>
         <button class="iconbtn" title="翻译" @click="doTranslate" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/></svg></button>
         <button class="iconbtn" title="设置" @click="emit('settings')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
       </div>
     </div>
 
-    <div class="canvas">
+    <div class="canvas" @click="togglePlay">
       <CaptionPanel
         v-if="captionOn && item"
         :subtitles="sub.subtitles.value"
         :current-time="sub.currentTime.value"
         :status="sub.status.value"
+        @click.stop
       />
       <div v-if="!item" class="empty">
         <div class="empty-badge">
@@ -313,7 +410,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
       <div v-else class="playing">
         <video
           v-if="item.media_type === 'video'"
-          ref="mediaEl" :src="src" controls
+          ref="mediaEl" :src="src"
           @play="onPlay" @pause="playing = false"
           @timeupdate="onTimeUpdate"
           @loadedmetadata="duration = ($event.target as HTMLVideoElement).duration"
@@ -343,7 +440,12 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
       </div>
     </div>
 
-    <div class="controls">
+    <Transition name="fade">
+      <div
+        class="controls"
+        v-show="!isFullscreen || controlsVisible"
+        :class="{ 'fs-overlay': isFullscreen }"
+      >
       <div class="seek-row">
         <span class="time">{{ fmt(sub.currentTime.value) }}</span>
         <input class="slider" type="range" min="0" :max="duration || 0" step="0.1" :value="sub.currentTime.value" :disabled="!item" @input="onSeekInput" />
@@ -428,6 +530,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
         </div>
       </div>
     </div>
+    </Transition>
   </main>
 </template>
 
@@ -435,6 +538,7 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
 .stage {
   flex: 1;
   min-width: 0;
+  position: relative;
   display: flex;
   flex-direction: column;
   background: #000;
@@ -581,21 +685,25 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
 }
 
 .playing {
-  position: relative;
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  width: 100%;
-  padding: 16px;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 16px 16px;
 }
 
 .playing video {
-  max-width: 100%;
-  max-height: calc(100vh - 220px);
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  object-fit: contain;
   border-radius: var(--radius-card);
   background: #000;
   outline: none;
+  cursor: pointer;
 }
 
 .artwork {
@@ -633,6 +741,27 @@ defineExpose({ togglePlay, seekBy, next, prev, toggleMute, adjustVolume, toggleF
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* 全屏时控制条悬浮于视频上方，带渐变底，随鼠标静止自动隐藏 */
+.controls.fs-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  border-top: none;
+  background: linear-gradient(
+    180deg,
+    rgba(13, 13, 15, 0) 0%,
+    rgba(13, 13, 15, 0.55) 42%,
+    rgba(13, 13, 15, 0.92) 100%
+  );
+}
+
+/* 全屏且控制条隐藏时隐藏鼠标指针，移动鼠标即恢复 */
+.stage.fs-hide-cursor {
+  cursor: none;
 }
 
 .seek-row {

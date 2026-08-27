@@ -21,9 +21,12 @@ pub struct MediaItem {
     pub media_type: String, // "video" | "audio"
     pub duration_ms: i64,
     pub playback_position: i64,
+    pub file_size: i64,      // 文件字节数（导入时读取，用于播放列表悬浮详情）
     pub subtitle_status: String, // "none" | "transcribing" | "done" | "error" | "translating"
     pub subtitle_lang: String,   // 原文语言，如 "ja"
     pub subtitle_count: i64,     // 已转写字幕段数
+    pub speed: f64,              // 每文件记住的播放速度（默认 1.0）
+    pub volume: f64,             // 每文件记住的音量 0.0-1.0（默认 1.0）
 }
 
 /// 判断文件是否为受支持的媒体，返回 Some("audio"/"video")

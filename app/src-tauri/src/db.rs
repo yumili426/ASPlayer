@@ -31,6 +31,7 @@ impl MediaDb {
                 media_type        TEXT NOT NULL,
                 duration_ms       INTEGER NOT NULL DEFAULT 0,
                 playback_position INTEGER NOT NULL DEFAULT 0,
+                file_size         INTEGER NOT NULL DEFAULT 0,
                 speed             REAL NOT NULL DEFAULT 1.0,
                 subtitle_status   TEXT NOT NULL DEFAULT 'none',
                 subtitle_lang     TEXT NOT NULL DEFAULT '',
@@ -55,7 +56,8 @@ impl MediaDb {
             );",
         )?;
         // 迁移已存在的旧库：为其补充 M2 新增的列（CREATE TABLE IF NOT EXISTS 不会改旧表）
-        Self::migrate(conn)
+        Self::migrate(conn)?;
+        Self::migrate_playback_params(conn)
     }
 
     /// 幂等迁移：给 media_files 补齐缺失的列（老版本数据库升级用）。
@@ -71,15 +73,40 @@ impl MediaDb {
                  ALTER TABLE media_files ADD COLUMN subtitle_lang TEXT NOT NULL DEFAULT '';",
             )?;
         }
+        if !cols.iter().any(|c| c == "file_size") {
+            conn.execute_batch(
+                "ALTER TABLE media_files ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
+        Ok(())
+    }
+
+    /// 幂等迁移（v2）：补 volume 列（speed 列建表即有，旧库可能没有，一并兜底）。
+    pub fn migrate_playback_params(conn: &Connection) -> rusqlite::Result<()> {
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(media_files)")?
+            .query_map([], |r| r.get(1))?
+            .collect::<Result<_, _>>()?;
+
+        if !cols.iter().any(|c| c == "volume") {
+            conn.execute_batch(
+                "ALTER TABLE media_files ADD COLUMN volume REAL;",
+            )?;
+        }
+        if !cols.iter().any(|c| c == "speed") {
+            conn.execute_batch(
+                "ALTER TABLE media_files ADD COLUMN speed REAL NOT NULL DEFAULT 1.0;",
+            )?;
+        }
         Ok(())
     }
 
     /// 按路径插入或更新，返回 id
-    pub fn upsert_media(&self, path: &str, title: &str, media_type: &str) -> rusqlite::Result<i64> {
+    pub fn upsert_media(&self, path: &str, title: &str, media_type: &str, file_size: i64) -> rusqlite::Result<i64> {
         self.conn.execute(
-            "INSERT INTO media_files (path, title, media_type) VALUES (?1, ?2, ?3)
-             ON CONFLICT(path) DO UPDATE SET title = excluded.title",
-            [path, title, media_type],
+            "INSERT INTO media_files (path, title, media_type, file_size) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(path) DO UPDATE SET title = excluded.title, file_size = excluded.file_size",
+            rusqlite::params![path, title, media_type, file_size],
         )?;
         Ok(self.conn.query_row("SELECT id FROM media_files WHERE path = ?1", [path], |r| r.get(0))?)
     }
@@ -87,8 +114,9 @@ impl MediaDb {
     pub fn list_media(&self) -> rusqlite::Result<Vec<MediaItem>> {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.path, m.title, m.media_type, m.duration_ms, m.playback_position,
-                    m.subtitle_status, m.subtitle_lang,
-                    (SELECT COUNT(*) FROM subtitles s WHERE s.media_id = m.id)
+                    m.file_size, m.subtitle_status, m.subtitle_lang,
+                    (SELECT COUNT(*) FROM subtitles s WHERE s.media_id = m.id),
+                    COALESCE(m.speed, 1.0), COALESCE(m.volume, 1.0)
              FROM media_files m ORDER BY m.added_at DESC, m.id DESC",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -99,9 +127,12 @@ impl MediaDb {
                 media_type: r.get(3)?,
                 duration_ms: r.get(4)?,
                 playback_position: r.get(5)?,
-                subtitle_status: r.get(6)?,
-                subtitle_lang: r.get(7)?,
-                subtitle_count: r.get(8)?,
+                file_size: r.get(6)?,
+                subtitle_status: r.get(7)?,
+                subtitle_lang: r.get(8)?,
+                subtitle_count: r.get(9)?,
+                speed: r.get(10)?,
+                volume: r.get(11)?,
             })
         })?;
         rows.collect()
@@ -111,6 +142,24 @@ impl MediaDb {
         self.conn.execute(
             "UPDATE media_files SET playback_position = ?1 WHERE id = ?2",
             [position_ms.to_string().as_str(), &id.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// 读取每文件播放参数（速度/音量）；无记录时返回默认值 1.0
+    pub fn get_playback_params(&self, id: i64) -> rusqlite::Result<(f64, f64)> {
+        self.conn.query_row(
+            "SELECT COALESCE(speed, 1.0), COALESCE(volume, 1.0) FROM media_files WHERE id = ?1",
+            [&id.to_string()],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+    }
+
+    /// 保存每文件播放参数（速度/音量），由前端在变更后防抖调用
+    pub fn save_playback_params(&self, id: i64, speed: f64, volume: f64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE media_files SET speed = ?1, volume = ?2 WHERE id = ?3",
+            rusqlite::params![speed, volume, id],
         )?;
         Ok(())
     }
@@ -131,6 +180,29 @@ impl MediaDb {
         self.conn
             .execute("DELETE FROM media_files WHERE id = ?1", [&id.to_string()])?;
         Ok(())
+    }
+
+    /// 取消转写后回退状态：已有字幕→恢复 done（保留旧字幕）；否则→none。
+    /// 返回回退后的状态字符串（"done" | "none"）。
+    pub fn rollback_after_cancel(&self, media_id: i64) -> rusqlite::Result<String> {
+        let has: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM subtitles WHERE media_id = ?1",
+            [&media_id.to_string()],
+            |r| r.get(0),
+        )?;
+        if has > 0 {
+            self.conn.execute(
+                "UPDATE media_files SET subtitle_status = 'done' WHERE id = ?1",
+                [&media_id.to_string()],
+            )?;
+            Ok("done".into())
+        } else {
+            self.conn.execute(
+                "UPDATE media_files SET subtitle_status = 'none', subtitle_lang = '' WHERE id = ?1",
+                [&media_id.to_string()],
+            )?;
+            Ok("none".into())
+        }
     }
 
     /// 清空某媒体的所有字幕（重新转写前调用）
@@ -296,10 +368,10 @@ mod tests {
     #[test]
     fn upsert_and_list() -> rusqlite::Result<()> {
         let db = MediaDb::open_in_memory()?;
-        let id1 = db.upsert_media("D:/m/a.mp4", "a", "video")?;
-        db.upsert_media("D:/m/b.mp3", "b", "audio")?;
+        let id1 = db.upsert_media("D:/m/a.mp4", "a", "video", 0)?;
+        db.upsert_media("D:/m/b.mp3", "b", "audio", 0)?;
         // 重复插入同路径 → 更新而非新增
-        let id_again = db.upsert_media("D:/m/a.mp4", "a-renamed", "video")?;
+        let id_again = db.upsert_media("D:/m/a.mp4", "a-renamed", "video", 0)?;
         assert_eq!(id1, id_again);
 
         let items = db.list_media()?;
@@ -311,7 +383,7 @@ mod tests {
     #[test]
     fn save_position_roundtrip() -> rusqlite::Result<()> {
         let db = MediaDb::open_in_memory()?;
-        let id = db.upsert_media("D:/m/a.mp3", "a", "audio")?;
+        let id = db.upsert_media("D:/m/a.mp3", "a", "audio", 0)?;
         db.save_playback_position(id, 42_000)?;
         let items = db.list_media()?;
         assert_eq!(items[0].playback_position, 42_000);
@@ -321,7 +393,7 @@ mod tests {
     #[test]
     fn subtitles_roundtrip() -> rusqlite::Result<()> {
         let db = MediaDb::open_in_memory()?;
-        let id = db.upsert_media("D:/m/a.mp3", "a", "audio")?;
+        let id = db.upsert_media("D:/m/a.mp3", "a", "audio", 0)?;
         db.save_subtitle(id, 0, 1500, "おやすみ", "", 0)?;
         db.save_subtitle(id, 2000, 4000, "good night", "", 1)?;
         // 更新第一条译文
@@ -342,7 +414,7 @@ mod tests {
     #[test]
     fn subtitle_status_roundtrip() -> rusqlite::Result<()> {
         let db = MediaDb::open_in_memory()?;
-        let id = db.upsert_media("D:/m/a.mp3", "a", "audio")?;
+        let id = db.upsert_media("D:/m/a.mp3", "a", "audio", 0)?;
         db.set_subtitle_status(id, "transcribing", "ja")?;
         let (s, l) = db.get_subtitle_status(id)?;
         assert_eq!(s, "transcribing");
@@ -364,14 +436,69 @@ mod tests {
         db.save_setting("api_key", "sk-new")?;
         assert_eq!(db.get_setting("api_key")?.as_deref(), Some("sk-new"));
         let all = db.all_settings()?;
-        assert_eq!(all.len(), 2);
+        assert_eq!(all.len(), 2); // 默认设置项由前端面板首次写入，DB 层不做种子数据
+        Ok(())
+    }
+
+    #[test]
+    fn playback_params_roundtrip() -> rusqlite::Result<()> {
+        let db = MediaDb::open_in_memory()?;
+        let id = db.upsert_media("D:/m/a.mp4", "a", "video", 0)?;
+        // 未保存过时返回默认值
+        assert_eq!(db.get_playback_params(id)?, (1.0, 1.0));
+        db.save_playback_params(id, 1.5, 0.7)?;
+        assert_eq!(db.get_playback_params(id)?, (1.5, 0.7));
+        // 再次覆盖
+        db.save_playback_params(id, 0.75, 1.0)?;
+        assert_eq!(db.get_playback_params(id)?, (0.75, 1.0));
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_adds_volume_column() -> rusqlite::Result<()> {
+        // 构造一个含 speed 但缺 volume 的库（等价于本次功能上线前的旧库）
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            "CREATE TABLE media_files (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                path              TEXT NOT NULL UNIQUE,
+                title             TEXT NOT NULL,
+                media_type        TEXT NOT NULL,
+                duration_ms       INTEGER NOT NULL DEFAULT 0,
+                playback_position INTEGER NOT NULL DEFAULT 0,
+                speed             REAL NOT NULL DEFAULT 1.0,
+                added_at          TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        )?;
+
+        MediaDb::migrate_playback_params(&conn)?;
+
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(media_files)")?
+            .query_map([], |r| r.get(1))?
+            .collect::<Result<_, _>>()?;
+        assert!(cols.iter().any(|c| c == "volume"));
+        assert!(cols.iter().any(|c| c == "speed"));
+
+        // 幂等：再跑一次不报错；且旧数据读取回退到默认音量
+        MediaDb::migrate_playback_params(&conn)?;
+        conn.execute(
+            "INSERT INTO media_files (path, title, media_type) VALUES ('D:/x.mp4', 'x', 'video')",
+            [],
+        )?;
+        let v: f64 = conn.query_row(
+            "SELECT COALESCE(volume, 1.0) FROM media_files WHERE path = 'D:/x.mp4'",
+            [],
+            |r| r.get(0),
+        )?;
+        assert_eq!(v, 1.0);
         Ok(())
     }
 
     #[test]
     fn list_media_includes_subtitle_fields() -> rusqlite::Result<()> {
         let db = MediaDb::open_in_memory()?;
-        let id = db.upsert_media("D:/m/a.mp4", "a", "video")?;
+        let id = db.upsert_media("D:/m/a.mp4", "a", "video", 0)?;
         db.save_subtitle(id, 0, 1000, "hi", "", 0)?;
         db.set_subtitle_status(id, "done", "ja")?;
         let items = db.list_media()?;

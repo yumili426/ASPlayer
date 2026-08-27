@@ -12,6 +12,8 @@ import {
   onTranscribeProgress,
   onTranscribeDone,
   onTranscribeError,
+  onTranscribeCanceled,
+  cancelTranscribe,
   translateMedia,
 } from "./api/subtitle";
 
@@ -24,6 +26,7 @@ const settingsOpen = ref(false);
 const theme = ref<"light" | "dark" | "system">("system");
 const showPlaylist = ref(true);
 const showSubtitle = ref(true);
+const stageFullscreen = ref(false);
 const unlisteners: (() => void)[] = [];
 const stageRef = ref<any>(null);
 
@@ -174,6 +177,10 @@ function onKeydown(e: KeyboardEvent) {
   // 正在录制快捷键时，忽略全局快捷键
   if (sc.recording.value) return;
   if (e.key === "Escape") {
+    if (stageFullscreen.value) {
+      stageRef.value?.toggleFullscreen();
+      return;
+    }
     if (settingsOpen.value) settingsOpen.value = false;
     return;
   }
@@ -222,6 +229,23 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
+function onFullscreenChange(v: boolean) {
+  stageFullscreen.value = v;
+}
+
+// 字幕面板/工具栏的"取消转写"：受理取消请求（whisper 推理不可中断，
+// 最迟在本轮推理结束后退出并广播 transcribe://canceled）
+async function onCancelTranscribe() {
+  if (!current.value) return;
+  sub.setStatus("transcribing", "cancel", sub.progress.value, "已请求取消，等待当前步骤结束…");
+  try {
+    await cancelTranscribe(current.value.id);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 取消转写失败:", e);
+  }
+}
+
 function togglePlaylist() {
   showPlaylist.value = !showPlaylist.value;
 }
@@ -254,7 +278,15 @@ onMounted(async () => {
     console.error("[ASPlayer] 转写/翻译错误:", msg);
     sub.setStatus("error", "", 0, msg);
   });
-  unlisteners.push(u1, u2, u3);
+  // 用户取消转写：复位状态、丢弃挂起的自动翻译待办、刷新列表
+  const u4 = await onTranscribeCanceled((mediaId) => {
+    // eslint-disable-next-line no-console
+    console.log("[ASPlayer] 转写已取消:", mediaId);
+    sub.consumeAutoTranslate();
+    sub.setStatus("none", "canceled", 0, "已取消转写");
+    refresh().catch(() => {});
+  });
+  unlisteners.push(u1, u2, u3, u4);
   window.addEventListener("keydown", onKeydown);
   refresh();
 });
@@ -277,9 +309,10 @@ onUnmounted(() => {
       @settings="settingsOpen = true"
       @toggle-playlist="togglePlaylist"
       @toggle-subtitle="toggleSubtitle"
+      @fullscreen-change="onFullscreenChange"
     />
     <SubtitlePanel
-      v-if="showSubtitle"
+      v-if="showSubtitle && !stageFullscreen"
       :subtitles="sub.subtitles.value"
       :current-time="sub.currentTime.value"
       :status="sub.status.value"
@@ -288,9 +321,10 @@ onUnmounted(() => {
       :message="sub.message.value"
       @close="showSubtitle = false"
       @seek="seekTo"
+      @cancel="onCancelTranscribe"
     />
     <PlaylistPanel
-      v-if="showPlaylist"
+      v-if="showPlaylist && !stageFullscreen"
       :items="items"
       :current-id="current?.id ?? null"
       :loading="loading"

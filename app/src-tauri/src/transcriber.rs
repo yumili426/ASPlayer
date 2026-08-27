@@ -4,8 +4,9 @@
 use crate::db::MediaDb;
 use anyhow::Result;
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use tauri::{AppHandle, Emitter};
 
 /// 前端所需的字幕行结构（序列化给前端）
@@ -31,6 +32,48 @@ struct ProgressPayload {
 const EVENT_PROGRESS: &str = "transcribe://progress";
 const EVENT_DONE: &str = "transcribe://done";
 const EVENT_ERROR: &str = "transcribe://error";
+const EVENT_CANCELED: &str = "transcribe://canceled";
+
+/// 正在运行的转写任务集合（media_id）。
+/// 1) 防止同一媒体并发触发多个转写任务；
+/// 2) 支持取消：请求取消 = 从集合移除，任务在下一个检查点自行退出。
+/// （whisper 推理为单次整体调用不可中断，取消最迟在其结束后生效）
+static RUNNING_TRANSCRIPTIONS: LazyLock<Mutex<HashSet<i64>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// 查询某媒体的转写任务是否正在运行
+pub fn transcription_running(media_id: i64) -> bool {
+    RUNNING_TRANSCRIPTIONS
+        .lock()
+        .map(|g| g.contains(&media_id))
+        .unwrap_or(false)
+}
+
+/// 登记新任务；该媒体已在跑则返回 false（拒绝重复触发）。
+fn register_transcription(media_id: i64) -> bool {
+    let mut guard = match RUNNING_TRANSCRIPTIONS.lock() {
+        Ok(g) => g,
+        Err(_) => return false,
+    };
+    if guard.contains(&media_id) {
+        false
+    } else {
+        guard.insert(media_id);
+        true
+    }
+}
+
+/// 注销/请求取消（两种含义合一：任务结束时也用它注销自己）
+fn unregister_transcription(media_id: i64) {
+    if let Ok(mut guard) = RUNNING_TRANSCRIPTIONS.lock() {
+        guard.remove(&media_id);
+    }
+}
+
+/// 请求取消某媒体的转写任务（在下一个检查点生效）
+pub fn request_cancel_transcription(media_id: i64) {
+    unregister_transcription(media_id);
+}
 
 /// 解析 whisper 模型路径：环境变量 ASPLAYER_MODEL > 默认 ~/.asplayer/models/ggml-small.bin
 pub fn model_path() -> PathBuf {
@@ -83,71 +126,120 @@ fn with_db<T>(
     let guard = db.lock().map_err(|e| anyhow::anyhow!("数据库锁异常: {e}"))?;
     f(&guard).map_err(anyhow::Error::from)
 }
-/// 转写任务（后台线程调用）：抽音轨 → whisper → 逐段写库 → 状态置 done
+/// 转写中止原因
+enum TranscribeStop {
+    Canceled,
+    Error(String),
+}
+
+/// 任务级失败：置 error 状态后向事件层传播
+fn fail(db: &Arc<Mutex<MediaDb>>, media_id: i64, msg: String) -> TranscribeStop {
+    let _ = with_db(db, |d| d.set_subtitle_status(media_id, "error", ""));
+    TranscribeStop::Error(msg)
+}
+
+/// 取消检查点：未取消则 Ok(())；已请求取消则按“是否已有字幕”回退状态并返回 Canceled。
+fn check_canceled(db: &Arc<Mutex<MediaDb>>, media_id: i64) -> Result<(), TranscribeStop> {
+    if transcription_running(media_id) {
+        return Ok(());
+    }
+    // 已请求取消：done→保留旧字幕并恢复 done；否则回退 none
+    let _ = with_db(db, |d| d.rollback_after_cancel(media_id));
+    Err(TranscribeStop::Canceled)
+}
+
+/// 转写步骤主体（锁外耗时操作 + 数据库短锁）
+fn transcribe_inner(
+    app: &AppHandle,
+    db: &Arc<Mutex<MediaDb>>,
+    media_id: i64,
+    lang_str: &str,
+    path: &str,
+    tmp: &std::path::Path,
+) -> Result<(), TranscribeStop> {
+    let _ = with_db(db, |d| d.set_subtitle_status(media_id, "transcribing", lang_str));
+    emit_progress(app, media_id, "extract", 5, "抽取音轨…");
+
+    // 抽音轨到临时目录
+    let _ = std::fs::create_dir_all(tmp);
+    let wav = match asplayer_transcribe::audio::extract_wav(&PathBuf::from(path), tmp) {
+        Ok(w) => w,
+        Err(e) => return Err(fail(db, media_id, format!("抽音轨失败: {e}"))),
+    };
+    check_canceled(db, media_id)?;
+
+    emit_progress(app, media_id, "transcribe", 15, "Whisper 转写中…");
+    let samples = match asplayer_transcribe::audio::read_samples_f32(&wav) {
+        Ok(s) => s,
+        Err(e) => return Err(fail(db, media_id, format!("读取音频失败: {e}"))),
+    };
+    check_canceled(db, media_id)?;
+
+    let model = model_path().to_string_lossy().into_owned();
+    let lang_opt = if lang_str.is_empty() { None } else { Some(lang_str) };
+    let segments = match asplayer_transcribe::whisper::transcribe(&model, lang_opt, &samples) {
+        Ok(segs) => segs,
+        Err(e) => return Err(fail(db, media_id, format!("转写失败: {e}"))),
+    };
+
+    // whisper 推理为单次整体调用不可中断：结束后立即落盘“推理期间到达的取消请求”
+    if !transcription_running(media_id) {
+        let _ = with_db(db, |d| d.rollback_after_cancel(media_id));
+        return Err(TranscribeStop::Canceled);
+    }
+
+    emit_progress(app, media_id, "transcribe", 80, &format!("写入 {} 段字幕…", segments.len()));
+    let _ = with_db(db, |d| {
+        d.clear_subtitles(media_id)?;
+        for (i, seg) in segments.iter().enumerate() {
+            d.save_subtitle(media_id, seg.start_ms as i64, seg.end_ms as i64, &seg.text, "", i as i64)?;
+        }
+        d.set_subtitle_status(media_id, "done", lang_str)
+    });
+    Ok(())
+}
+
+/// 转写任务（后台线程调用）：抽音轨 → whisper → 逐段写库 → 状态置 done。
+/// 任何退出路径统一：清理临时目录、注销运行标记。
 pub fn run_transcription(
     app: AppHandle,
     db: Arc<Mutex<MediaDb>>,
     media_id: i64,
     lang: Option<String>,
 ) {
-    // 此处的耗时步骤（抽音轨、whisper）都在锁外，仅数据库读写短锁。
+    // 同一媒体同时只允许一个转写任务
+    if !register_transcription(media_id) {
+        let _ = app.emit(EVENT_ERROR, format!("媒体 #{media_id} 已有转写任务在进行中"));
+        return;
+    }
+
     let path = match with_db(&db, |d| d.media_path(media_id)).map(|v| v.0) {
         Ok(p) => p,
         Err(e) => {
+            unregister_transcription(media_id);
             let _ = app.emit(EVENT_ERROR, format!("找不到媒体: {e}"));
             return;
         }
     };
 
-    let lang_str = lang.unwrap_or_default();
-    let _ = with_db(&db, |d| d.set_subtitle_status(media_id, "transcribing", &lang_str));
-    emit_progress(&app, media_id, "extract", 5, "抽取音轨…");
-
-    // 抽音轨到临时目录
     let tmp = std::env::temp_dir().join(format!("asplayer-{media_id}"));
-    let _ = std::fs::create_dir_all(&tmp);
-    let wav = match asplayer_transcribe::audio::extract_wav(&PathBuf::from(&path), &tmp) {
-        Ok(w) => w,
-        Err(e) => {
-            let _ = with_db(&db, |d| d.set_subtitle_status(media_id, "error", ""));
-            let _ = app.emit(EVENT_ERROR, format!("抽音轨失败: {e}"));
-            return;
-        }
-    };
-
-    emit_progress(&app, media_id, "transcribe", 15, "Whisper 转写中…");
-    let samples = match asplayer_transcribe::audio::read_samples_f32(&wav) {
-        Ok(s) => s,
-        Err(e) => {
-            let _ = with_db(&db, |d| d.set_subtitle_status(media_id, "error", ""));
-            let _ = app.emit(EVENT_ERROR, format!("读取音频失败: {e}"));
-            return;
-        }
-    };
-
-    let model = model_path().to_string_lossy().into_owned();
-    let lang_opt = if lang_str.is_empty() { None } else { Some(lang_str.as_str()) };
-    let segments = match asplayer_transcribe::whisper::transcribe(&model, lang_opt, &samples) {
-        Ok(segs) => segs,
-        Err(e) => {
-            let _ = with_db(&db, |d| d.set_subtitle_status(media_id, "error", ""));
-            let _ = app.emit(EVENT_ERROR, format!("转写失败: {e}"));
-            return;
-        }
-    };
-
-    emit_progress(&app, media_id, "transcribe", 80, &format!("写入 {} 段字幕…", segments.len()));
-    let _ = with_db(&db, |d| {
-        d.clear_subtitles(media_id)?;
-        for (i, seg) in segments.iter().enumerate() {
-            d.save_subtitle(media_id, seg.start_ms as i64, seg.end_ms as i64, &seg.text, "", i as i64)?;
-        }
-        d.set_subtitle_status(media_id, "done", &lang_str)
-    });
+    let result = transcribe_inner(&app, &db, media_id, &lang.unwrap_or_default(), &path, &tmp);
 
     let _ = std::fs::remove_dir_all(&tmp);
-    emit_progress(&app, media_id, "done", 100, "转写完成");
-    let _ = app.emit(EVENT_DONE, media_id);
+    unregister_transcription(media_id);
+
+    match result {
+        Ok(()) => {
+            emit_progress(&app, media_id, "done", 100, "转写完成");
+            let _ = app.emit(EVENT_DONE, media_id);
+        }
+        Err(TranscribeStop::Canceled) => {
+            let _ = app.emit(EVENT_CANCELED, media_id);
+        }
+        Err(TranscribeStop::Error(msg)) => {
+            let _ = app.emit(EVENT_ERROR, msg);
+        }
+    }
 }
 
 

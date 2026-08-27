@@ -46,6 +46,28 @@
 - [x] SettingsPanel 加 API 配置（base/key/model）
 
 ## Task 6: 端到端验证
-- [ ] `npm run tauri dev` 用真实样本：导入 → 播放 → 触发转写 → 事件进度 → 完成显示双语字幕 → 触发翻译
-- [ ] 重启后字幕仍在（SQLite）
-- [ ] `cargo test` 全绿 + `npm run build` 通过 → 打标签 `milestone-2`
+- [x] `npm run tauri dev` 用真实样本：导入 → 播放 → 触发转写 → 事件进度 → 完成显示双语字幕 → 触发翻译（2026-08-27 人工验收通过）
+- [x] 重启后字幕仍在（SQLite）
+
+---
+
+## M2.1 收尾增强（2026-08-27）
+
+> 对应设计文档 §4（记住每文件播放位置/速度）与 §8（转写任务可取消、重复触发防护）。
+
+### 后端（app/src-tauri）
+- [x] `transcriber.rs`：新增 `RUNNING_TRANSCRIPTIONS` 运行中任务表；`transcribe_media` 拒绝并发/翻译中的重复触发（返回错误）；每次启动前清理已中断残留状态标记；新增 `cancel_transcribe(id)` 命令——置 DB 状态为 `canceled` 并登记取消集合，whisper 推理不可中断，最迟在本轮推理结束后退出，成功后广播 `transcribe://canceled`
+- [x] `media.rs`：`MediaItem` 增加 `speed` / `volume` 字段
+- [x] `db.rs`：`save_playback_params`（UPDATE speed/volume）、`get_playback_params`（读取）；migrate 幂等补 `volume` 列
+- [x] 单测：`playback_params_roundtrip`、`migrate_adds_volume_column` → `cargo test` 全绿
+
+### 前端（app/src）
+- [x] `api/subtitle.ts`：`cancelTranscribe()`、`onTranscribeCanceled()`
+- [x] `PlayerStage.vue`：每文件速度/音量记忆（切换文件时 `get_playback_params` 恢复，变更后 800ms 防抖 `save_playback_params` 写回）；转写进行中禁用重复触发按钮并显示红色"取消转写"按钮；后端拒绝时展示错误
+- [x] `SubtitlePanel.vue`：进度区新增"取消转写"按钮（仅转写阶段显示）+ 样式
+- [x] `App.vue`：监听 `transcribe://canceled` → 复位状态、丢弃挂起的自动翻译待办、刷新列表；字幕面板 `@cancel` 接线
+- [x] `npm run build`（vue-tsc + vite）通过
+
+### 验证说明
+- whisper 单次整段推理期间无法即时中断，取消语义为"受理后最迟在当前推理结束生效"，UI 已在按钮 tooltip 中说明。
+- Task 6 真实样本 GUI 端到端验收已于 2026-08-27 人工执行通过；`cargo test` 全绿（11 passed）+ `npm run build` 通过，已打标签 `milestone-2`。

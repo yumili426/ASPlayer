@@ -10,6 +10,10 @@ export function translateMedia(id: number) {
   return invoke<void>("translate_media", { id });
 }
 
+export function cancelTranscribe(id: number) {
+  return invoke<void>("cancel_transcribe", { id });
+}
+
 export function getSubtitles(id: number): Promise<Subtitle[]> {
   return invoke<Subtitle[]>("get_subtitles", { id });
 }
@@ -48,4 +52,8 @@ export function onTranscribeDone(cb: (mediaId: number) => void): Promise<Unliste
 
 export function onTranscribeError(cb: (msg: string) => void): Promise<UnlistenFn> {
   return listen<string>("transcribe://error", (ev) => cb(ev.payload));
+}
+
+export function onTranscribeCanceled(cb: (mediaId: number) => void): Promise<UnlistenFn> {
+  return listen<number>("transcribe://canceled", (ev) => cb(ev.payload));
 }

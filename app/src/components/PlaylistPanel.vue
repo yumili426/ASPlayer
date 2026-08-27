@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { MediaItem } from "../types";
@@ -19,6 +19,52 @@ const emit = defineEmits<{
 
 const ctxMenu = ref<{ x: number; y: number; item: MediaItem } | null>(null);
 const confirmDelete = ref<MediaItem | null>(null);
+const hover = ref<{ x: number; y: number; item: MediaItem } | null>(null);
+const tipEl = ref<HTMLElement | null>(null);
+
+async function onItemHover(e: MouseEvent, item: MediaItem) {
+  const w = 232;
+  const estH = 112;
+  const t = e.currentTarget as HTMLElement | null;
+  let x: number;
+  let y: number;
+  if (t) {
+    const r = t.getBoundingClientRect();
+    // 悬浮层置于播放列表左侧（视频区），垂直居中于当前曲目，避免遮挡曲目
+    x = r.left - w - 14;
+    y = r.top + r.height / 2 - estH / 2;
+  } else {
+    x = e.clientX;
+    y = e.clientY;
+  }
+  x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+  y = Math.max(8, Math.min(y, window.innerHeight - estH - 8));
+  hover.value = { x, y, item };
+  // 文件名完整显示时高度不定，渲染后按实际高度修正位置，保证完整显示且不超出窗口
+  await nextTick();
+  const el = tipEl.value;
+  if (!el || !hover.value || hover.value.item !== item) return;
+  const realH = el.offsetHeight;
+  const top = Math.max(8, Math.min(hover.value.y, window.innerHeight - realH - 8));
+  if (top !== hover.value.y) hover.value = { ...hover.value, y: top };
+}
+
+function onItemLeave() {
+  hover.value = null;
+}
+
+function fmtSize(bytes: number): string {
+  if (!bytes || bytes <= 0) return "未知";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  let n = bytes;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i += 1;
+  }
+  const digits = i === 0 || n >= 100 ? 0 : 1;
+  return `${n.toFixed(digits)} ${units[i]}`;
+}
 
 function onContextMenu(e: MouseEvent, item: MediaItem) {
   const w = 180;
@@ -128,14 +174,13 @@ function fmtDuration(ms: number): string {
       </div>
       <div class="pl-actions">
         <button class="tool-btn" title="导入文件" @click="emit('import')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>
-          <span>文件</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 5v14M5 12h14"/></svg>
         </button>
         <button class="tool-btn" title="导入文件夹" @click="emit('importFolder')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
         </button>
         <button class="tool-btn" title="刷新" @click="emit('refresh')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg>
         </button>
         <button class="pl-close" title="关闭播放列表" @click="emit('close')">
           <svg viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-1)" stroke-width="1.8"><path d="M6 6l12 12M18 6L6 18"/></svg>
@@ -173,6 +218,8 @@ function fmtDuration(ms: number): string {
         :class="{ active: item.id === currentId }"
         @click="emit('play', item)"
         @contextmenu.prevent="onContextMenu($event, item)"
+        @mousemove="onItemHover($event, item)"
+        @mouseleave="onItemLeave"
       >
         <span class="pl-num">{{ item.id === currentId ? "▶" : i + 1 }}</span>
         <span class="pl-name">{{ item.title }}</span>
@@ -222,6 +269,14 @@ function fmtDuration(ms: number): string {
         </div>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div v-if="hover" ref="tipEl" class="pl-tip" :style="{ left: hover.x + 'px', top: hover.y + 'px' }">
+        <div class="pl-tip-title">{{ hover.item.title }}</div>
+        <div class="pl-tip-row"><label>文件大小</label><span>{{ fmtSize(hover.item.file_size) }}</span></div>
+        <div class="pl-tip-row"><label>文件时长</label><span>{{ fmtDuration(hover.item.duration_ms) }}</span></div>
+      </div>
+    </Teleport>
   </aside>
 </template>
 
@@ -268,26 +323,25 @@ function fmtDuration(ms: number): string {
 }
 
 .tool-btn {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
+  justify-content: center;
+  padding: 0;
   border: none;
   border-radius: 8px;
   background: var(--bg-2);
   color: var(--fg-1);
-  font-size: 13px;
   cursor: pointer;
-  transition: background 0.15s ease, opacity 0.15s ease;
-}
-
-.tool-btn:first-child {
-  background: var(--accent);
-  color: #fff;
+  transition: background 0.15s ease, filter 0.15s ease;
 }
 
 .tool-btn:hover {
-  opacity: 0.9;
+  background: var(--bg-2);
+  filter: brightness(1.25);
+  color: var(--fg-1);
 }
 
 .tool-btn svg {
@@ -560,5 +614,46 @@ function fmtDuration(ms: number): string {
 .dlg-btn.danger {
   background: #ff453a;
   color: #fff;
+}
+
+.pl-tip {
+  position: fixed;
+  z-index: 1000;
+  width: 232px;
+  padding: 11px 14px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+.pl-tip-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg-1);
+  margin-bottom: 8px;
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+.pl-tip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  line-height: 1.75;
+}
+
+.pl-tip-row label {
+  color: var(--fg-3);
+  flex: 0 0 auto;
+}
+
+.pl-tip-row span {
+  color: var(--fg-1);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  word-break: break-all;
 }
 </style>

@@ -5,9 +5,12 @@ export interface MediaItem {
   media_type: "video" | "audio";
   duration_ms: number;
   playback_position: number;
+  file_size: number;
   subtitle_status: "none" | "transcribing" | "done" | "error" | "translating";
   subtitle_lang: string;
   subtitle_count: number;
+  speed: number;
+  volume: number;
 }
 
 export interface Subtitle {

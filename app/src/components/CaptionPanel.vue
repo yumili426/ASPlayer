@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import type { Subtitle } from "../types";
 import { useCaptionStyle } from "../stores/captionStyle";
 
@@ -16,6 +16,15 @@ const current = computed<Subtitle | null>(() => {
 
 const cap = useCaptionStyle();
 const mode = computed(() => cap.captionStyle.mode);
+
+// “暂无字幕”空态可手动关闭；一旦出现字幕或进入转写/翻译/出错状态则重新展示
+const dismissed = ref(false);
+watch(
+  [() => props.subtitles.length, () => props.status],
+  ([n, s]) => {
+    if (n > 0 || s !== "none") dismissed.value = false;
+  }
+);
 const capVars = computed(() => ({
   "--cap-font": String(cap.captionStyle.fontScale),
   "--cap-color": cap.captionStyle.color,
@@ -35,9 +44,10 @@ const capVars = computed(() => ({
       <p class="sub">请检查模型/API 配置后重试</p>
     </div>
 
-    <div v-else-if="subtitles.length === 0" class="caption-empty">
+    <div v-else-if="subtitles.length === 0 && !dismissed" class="caption-empty">
       <p>暂无字幕</p>
       <p class="sub">可点击「转写」生成字幕</p>
+      <button class="caption-dismiss" title="关闭提示" @click.stop="dismissed = true">×</button>
     </div>
 
     <template v-else>
@@ -112,15 +122,47 @@ const capVars = computed(() => ({
 }
 
 .caption-empty {
-  color: var(--fg-3);
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 11px 34px 11px 16px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 10px;
+  color: var(--fg-2);
   font-size: 13px;
+  pointer-events: auto;
 }
 
 .caption-empty .sub {
   font-size: 12px;
   color: var(--fg-3);
-  opacity: 0.8;
+  opacity: 0.85;
   margin-top: 2px;
+}
+
+.caption-dismiss {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-3);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.caption-dismiss:hover {
+  background: var(--bg-2);
+  color: var(--fg-1);
 }
 
 .caption-pending {
