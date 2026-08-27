@@ -6,6 +6,7 @@ import CaptionPanel from "./CaptionPanel.vue";
 import type { MediaItem } from "../types";
 import { useSubtitle } from "../stores/subtitle";
 import { usePlayback } from "../stores/playback";
+import { attachMedia as attachOverlayMedia } from "../overlayFeed";
 import { cancelTranscribe, transcribeMedia, translateMedia } from "../api/subtitle";
 
 const sub = useSubtitle();
@@ -122,6 +123,8 @@ function scheduleSaveParams() {
 
 watch(mediaEl, (el) => {
   if (el) applyVolume();
+  // video/audio 切换、卸载皆经此点同步给推送引擎（null 亦传递以解绑）
+  attachOverlayMedia(el);
 });
 
 const transcribing = computed(() => sub.status.value === "transcribing");
