@@ -72,3 +72,21 @@ export interface ShortcutBinding {
   action: ShortcutActionName;
   keys: string; // normalize 后的组合，如 "Space"、"ArrowLeft"、"Mod+KeyL"、"KeyJ"
 }
+
+export interface ModelStatus {
+  size: string;
+  file_exists: boolean;
+  file_bytes: number;
+  selected: boolean;
+  status: "downloading" | "done" | "failed" | "canceled" | "idle";
+  bytes_downloaded: number;
+  total_bytes: number;
+  error: string | null;
+}
+
+export interface ModelProgress {
+  size: string;
+  bytes_downloaded: number;
+  total_bytes: number;
+  percent: number;
+}
