@@ -33,6 +33,7 @@ const startMs = ref(0);
 const locked = ref(false);
 const tbVisible = ref(false);   // 工具栏可见性（悬停 2s 延迟隐藏）
 const panelOpen = ref(false);   // ⚙迷你面板
+const chipVisible = ref(false); // 锁定态悬停时浮现的"解锁"按钮（Rust 悬停探测驱动）
 const receivedFirst = ref(false); // 是否收到过第一条真句（决定提示条显隐）
 const unlisteners: (() => void)[] = [];
 
@@ -89,6 +90,11 @@ function lockOverlay() {
   invoke("set_overlay_locked", { locked: true }).catch(() => {});
 }
 
+/** 锁定态下点击悬停浮现的解锁钮 */
+function unlockOverlay() {
+  invoke("set_overlay_locked", { locked: false }).catch(() => {});
+}
+
 function closeOverlay() {
   invoke("set_overlay_visible", { visible: false }).catch(() => {});
 }
@@ -114,7 +120,11 @@ onMounted(async () => {
         if (locked.value) {
           tbVisible.value = false;
           panelOpen.value = false;
+          chipVisible.value = false;
         }
+      }),
+      await listen<boolean>("overlay://hover-unlock", (e) => {
+        chipVisible.value = !!e.payload && locked.value;
       }),
       await watchOverlayPrefs()
     );
@@ -138,7 +148,7 @@ onUnmounted(() => {
 <template>
   <div
     class="overlay-root"
-    :class="{ locked }"
+    :class="{ locked, picked: locked && chipVisible }"
     @mouseenter="tbShow"
     @mouseleave="tbHide"
   >
@@ -152,6 +162,14 @@ onUnmounted(() => {
       :class="{ dragging: !locked }"
       @pointerdown="onDragStart"
     >
+      <!-- 锁定态悬停解锁钮：穿透解除由 Rust 侧悬停探测临时开启 -->
+      <button
+        v-show="locked && chipVisible"
+        class="unlock-chip"
+        title="点击解锁悬浮字幕窗"
+        @pointerdown.stop
+        @click.stop="unlockOverlay"
+      >🔓 解锁</button>
       <!-- 悬停工具栏：交互区阻断拖拽冒泡 -->
       <div
         v-show="tbVisible"
@@ -243,17 +261,23 @@ onUnmounted(() => {
   user-select: none;
 }
 
-/* Quiet Glass 玻璃条：毛玻璃不生效时自然降级为半透明深底（观感相近） */
+/* 网易云式形态：平时纯文字悬浮于透明底，悬停才浮出毛玻璃条；锁定态不可 hover 自动全透明 */
 .glass {
   width: calc(100vw - 28px);
   max-height: calc(100vh - 16px);
   border-radius: 18px;
+  padding: 34px 20px 18px;
+  cursor: grab;
+  transition:
+    background-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+/* Quiet Glass 玻璃条：毛玻璃不生效时自然降级为半透明深底（观感相近） */
+.overlay-root:not(.locked) .glass:hover {
   background: rgba(12, 14, 20, 0.55);
   backdrop-filter: blur(16px) saturate(130%);
   outline: 1px solid rgba(255, 255, 255, 0.09);
   box-shadow: 0 10px 36px rgba(0, 0, 0, 0.45);
-  padding: 34px 20px 18px;
-  cursor: grab;
 }
 .glass.dragging:active {
   cursor: grabbing;
@@ -394,11 +418,16 @@ onUnmounted(() => {
 .line.orig {
   color: #fff;
   font-weight: 600;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+  /* 无底衬时靠描边+投影保证游戏画面可读性 */
+  text-shadow:
+    0 0 5px rgba(0, 0, 0, 0.8),
+    0 1px 4px rgba(0, 0, 0, 0.65);
 }
 .line.trans {
   margin-top: 5px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  text-shadow:
+    0 0 5px rgba(0, 0, 0, 0.8),
+    0 1px 3px rgba(0, 0, 0, 0.6);
 }
 .cleared {
   height: 8px; /* 占位保住布局，视觉完全透明 */
@@ -418,5 +447,35 @@ onUnmounted(() => {
 .linefade-enter-from,
 .linefade-leave-to {
   opacity: 0;
+}
+
+/* ---- 锁定态悬停解锁钮（正上方居中） ---- */
+.unlock-chip {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  border: none;
+  border-radius: 9px;
+  padding: 3px 12px;
+  background: rgba(12, 14, 20, 0.78);
+  outline: 1px solid rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  animation: chip-in 0.18s ease;
+}
+.unlock-chip:hover {
+  background: #e5484d;
+}
+@keyframes chip-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+/* 悬停期间整窗垫一层极淡底色：WebView2 透明像素处会丢鼠标事件，
+   垫色后从文字移到按钮的路径上事件不断链，按钮不再半路消失 */
+.overlay-root.picked {
+  background: rgba(0, 0, 0, 0.01);
 }
 </style>

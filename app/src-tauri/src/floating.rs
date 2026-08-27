@@ -124,7 +124,86 @@ pub fn create_overlay_window(app: &AppHandle) -> tauri::Result<()> {
     .build()?;
     // 默认非锁定态：可拖动、不穿透；锁定由全局快捷键/设置面板切换
     let _ = win.set_ignore_cursor_events(false);
+    start_lock_hover_watcher(app);
     Ok(())
+}
+
+/// 锁定态下的悬停解锁支持（参考网易云桌面歌词）。
+///
+/// 穿透窗口收不到任何鼠标事件，无法在 JS 里感知 hover。此 watcher 以 8Hz
+/// 轮询光标是否落在悬浮窗内：锁定且光标停留 ≥300ms 时临时解除穿透，
+/// 并通知悬浮窗浮现"解锁"按钮；光标离开立即恢复穿透。短暂停留（快速划过）
+/// 不会吞掉下层应用的点击——这正是网易云式的权衡。
+fn start_lock_hover_watcher(app: &AppHandle) {
+    let h = app.clone();
+    std::thread::spawn(move || {
+        const POLL: std::time::Duration = std::time::Duration::from_millis(120);
+        const DWELL: std::time::Duration = std::time::Duration::from_millis(150);
+        /// 连续多次采样到窗外才真正收回穿透（迟滞，防止移动途中事件抖动导致按钮消失）
+        const MISS_TICKS: u32 = 4;
+        let mut inside_since: Option<std::time::Instant> = None;
+        let mut miss = 0u32;
+        let mut lifted = false;
+        loop {
+            std::thread::sleep(POLL);
+            let st = h.state::<OverlayState>();
+            if !st.locked.load(Ordering::SeqCst) {
+                inside_since = None;
+                lifted = false;
+                continue;
+            }
+            if !st.visible.load(Ordering::SeqCst) {
+                // 隐藏时维持原穿透状态即可，无需处理 hover
+                inside_since = None;
+                continue;
+            }
+            let Some(win) = h.get_webview_window(OVERLAY_LABEL) else {
+                continue;
+            };
+            // 光标在窗口客户区内。取不到坐标时按"在内"处理：宁可多托举一下
+            // 也不要抖动穿透让解锁钮消失。
+            let cursor_inside = win
+                .cursor_position()
+                .map(|p| {
+                    let (w, hh) = win
+                        .inner_size()
+                        .map(|s| (s.width as f64, s.height as f64))
+                        .unwrap_or((-1.0, -1.0));
+                    p.x >= 0.0 && p.y >= 0.0 && p.x < w && p.y < hh
+                })
+                .unwrap_or(true);
+            match cursor_inside {
+                true => {
+                    miss = 0;
+                    match lifted {
+                        false => {
+                            let since = inside_since.get_or_insert_with(std::time::Instant::now);
+                            if since.elapsed() >= DWELL {
+                                if win.set_ignore_cursor_events(false).is_ok() {
+                                    lifted = true;
+                                    let _ =
+                                        h.emit_to(OVERLAY_LABEL, "overlay://hover-unlock", true);
+                                }
+                            }
+                        }
+                        true => {}
+                    }
+                }
+                false => {
+                    miss += 1;
+                    if miss >= MISS_TICKS {
+                        inside_since = None;
+                        miss = 0;
+                        if lifted {
+                            let _ = win.set_ignore_cursor_events(true);
+                            lifted = false;
+                            let _ = h.emit_to(OVERLAY_LABEL, "overlay://hover-unlock", false);
+                        }
+                    }
+                }
+            }
+        }
+    });
 }
 
 // ---------- 后端中继（供其他模块/命令调用的推送函数） ----------
