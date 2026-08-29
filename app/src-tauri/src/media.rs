@@ -65,6 +65,19 @@ pub fn scan_media_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+/// 在媒体同目录找同名 `.srt`/`.vtt` 字幕（存在 `.srt` 则优先）。找不到返回 None。
+pub fn find_sibling_subtitle(media_path: &Path) -> Option<PathBuf> {
+    let stem = media_path.file_stem()?.to_str()?;
+    let dir = media_path.parent()?;
+    for ext in ["srt", "vtt"] {
+        let cand = dir.join(format!("{stem}.{ext}"));
+        if cand.is_file() {
+            return Some(cand);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -92,6 +105,29 @@ mod tests {
 
         let found = scan_media_files(dir.path())?;
         assert_eq!(found.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn find_sibling_prefers_srt_over_vtt() -> std::io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        fs::write(dir.path().join("a.mp4"), b"x")?;
+        fs::write(dir.path().join("a.srt"), b"1")?;
+        fs::write(dir.path().join("a.vtt"), b"WEBVTT")?;
+        let got = find_sibling_subtitle(&dir.path().join("a.mp4")).expect("should find sibling");
+        assert_eq!(got, dir.path().join("a.srt"));
+        Ok(())
+    }
+
+    #[test]
+    fn find_sibling_falls_back_to_vtt_and_none() -> std::io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        fs::write(dir.path().join("b.mp4"), b"x")?;
+        fs::write(dir.path().join("b.vtt"), b"WEBVTT")?;
+        let got = find_sibling_subtitle(&dir.path().join("b.mp4")).expect("vtt sibling");
+        assert_eq!(got, dir.path().join("b.vtt"));
+        assert_eq!(find_sibling_subtitle(&dir.path().join("b.mp4")), Some(dir.path().join("b.vtt")));
+        assert_eq!(find_sibling_subtitle(&dir.path().join("no-suchfile.mp4")), None);
         Ok(())
     }
 }
