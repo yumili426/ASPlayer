@@ -249,6 +249,39 @@ impl MediaDb {
         rows.collect()
     }
 
+    /// 事务内替换某媒体的全部字幕：clear + upsert + 置 done + 转写断点清零。
+    /// 导入的外部字幕无译文（translation 置空）；断点清零防「从断点继续」污染。
+    pub fn replace_subtitles(
+        &self,
+        media_id: i64,
+        segs: &[asplayer_transcribe::srt::Segment],
+    ) -> rusqlite::Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM subtitles WHERE media_id = ?1", rusqlite::params![media_id])?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO subtitles (media_id, start_ms, end_ms, text, translation, ordinal)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT DO UPDATE SET end_ms = excluded.end_ms,
+                                           text = excluded.text,
+                                           translation = CASE WHEN excluded.translation = '' THEN subtitles.translation ELSE excluded.translation END,
+                                           ordinal = excluded.ordinal",
+            )?;
+            for (i, seg) in segs.iter().enumerate() {
+                stmt.execute(rusqlite::params![media_id, seg.start_ms as i64, seg.end_ms as i64, seg.text, "", i as i64])?;
+            }
+        }
+        tx.execute(
+            "UPDATE media_files SET subtitle_status = 'done', subtitle_lang = '' WHERE id = ?1",
+            rusqlite::params![media_id],
+        )?;
+        tx.execute(
+            "UPDATE media_files SET transcribe_next_ms = 0 WHERE id = ?1",
+            rusqlite::params![media_id],
+        )?;
+        tx.commit()
+    }
+
     /// 仅读取尚未翻译的字幕段（translation 为空）
     pub fn get_untranslated_subtitles(
         &self,
@@ -437,6 +470,32 @@ mod tests {
         db.set_subtitle_status(id, "done", "ja")?;
         let (s, _) = db.get_subtitle_status(id)?;
         assert_eq!(s, "done");
+        Ok(())
+    }
+
+    #[test]
+    fn replace_subtitles_replaces_and_marks_done() -> rusqlite::Result<()> {
+        use asplayer_transcribe::srt::Segment;
+        let db = MediaDb::open_in_memory()?;
+        let id = db.upsert_media("D:/m/a.mp4", "a", "video", 0)?;
+        db.save_subtitle(id, 0, 1000, "old", "", 0)?;
+        db.set_transcribe_next_ms(id, 2500)?;
+        let segs = vec![
+            Segment { start_ms: 0, end_ms: 1500, text: "hello".into() },
+            Segment { start_ms: 2000, end_ms: 4000, text: "world".into() },
+        ];
+        db.replace_subtitles(id, &segs)?;
+        let rows = db.get_subtitles(id)?;
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].text, "hello");
+        assert_eq!(rows[1].text, "world");
+        let (status, lang) = db.get_subtitle_status(id)?;
+        assert_eq!(status, "done");
+        assert_eq!(lang, "");
+        assert_eq!(db.get_transcribe_next_ms(id)?, 0);
+        // 幂等重复调用不叠加
+        db.replace_subtitles(id, &segs)?;
+        assert_eq!(db.get_subtitles(id)?.len(), 2);
         Ok(())
     }
 
