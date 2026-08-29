@@ -22,6 +22,8 @@ import {
   onTranscribeCanceled,
   cancelTranscribe,
   translateMedia,
+  getSubtitleStatus,
+  importExternalSubtitle,
 } from "./api/subtitle";
 
 const sub = useSubtitle();
@@ -125,6 +127,36 @@ async function importFiles() {
     console.error("[ASPlayer] 导入文件失败:", e);
   } finally {
     loading.value = false;
+  }
+}
+
+// 导入外部字幕：选文件 → 有旧字幕先确认 → 替换 → 刷新当前媒体
+async function onImportSubtitle(mediaId: number) {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const sel = await open({
+    multiple: false,
+    filters: [{ name: "字幕文件", extensions: ["srt", "vtt"] }],
+  });
+  if (!sel) return;
+  const path = Array.isArray(sel) ? sel[0] : sel;
+  const [st] = await getSubtitleStatus(mediaId).catch(() => ["none" as string, "" as string]);
+  if (st !== "none") {
+    const ok = window.confirm("导入将替换该媒体现有的字幕，继续？");
+    if (!ok) return;
+  }
+  try {
+    const count = await importExternalSubtitle(mediaId, path);
+    // eslint-disable-next-line no-console
+    console.log("[ASPlayer] 导入字幕:", count, "段");
+    if (sub.currentId.value === mediaId) {
+      sub.setStatus("done", "done", 100, "");
+      sub.load(mediaId);
+    }
+    refresh().catch(() => {});
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 导入字幕失败:", e);
+    sub.setStatus("error", "", 0, String(e));
   }
 }
 
@@ -375,6 +407,7 @@ onUnmounted(() => {
       @toggle-subtitle="toggleSubtitle"
       @fullscreen-change="onFullscreenChange"
       @overlay-toggle="onOverlayToggle"
+      @import-subtitle="onImportSubtitle"
     />
     <SubtitlePanel
       v-if="showSubtitle && !stageFullscreen"
@@ -398,6 +431,7 @@ onUnmounted(() => {
       @import-folder="importFolder"
       @refresh="refresh"
       @close="showPlaylist = false"
+      @import-subtitle="(item) => onImportSubtitle(item.id)"
     />
     <SettingsPanel
       :open="settingsOpen"

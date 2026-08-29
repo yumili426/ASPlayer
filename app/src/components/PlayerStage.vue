@@ -21,6 +21,7 @@ const emit = defineEmits<{
   toggleSubtitle: [];
   fullscreenChange: [fullscreen: boolean];
   overlayToggle: [];
+  importSubtitle: [id: number];
 }>();
 
 const mediaEl = ref<HTMLVideoElement | HTMLAudioElement | null>(null);
@@ -157,6 +158,10 @@ async function doTranslate() {
   if (!props.item) return;
   sub.setStatus("translating", "translate", 0, "正在翻译…");
   await translateMedia(props.item.id);
+}
+
+function doImportSubtitle() {
+  if (props.item) emit("importSubtitle", props.item.id);
 }
 
 function togglePlay() {
@@ -388,6 +393,7 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
         <button class="iconbtn" title="字幕面板" @click="emit('toggleSubtitle')" :class="{ active: captionOn }"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M11 10h6"/></svg></button>
         <button v-if="item && item.subtitle_status === 'partial'" class="iconbtn" title="从断点继续转写" @click="doTranscribe(false, true)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v16M20 6l-10 6 10 6z"/></svg></button>
         <button class="iconbtn" title="转写" @click="doTranscribe(false)" :disabled="!item || transcribing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10"/><path d="m8 9 4 4 4-4"/><path d="M4 17v2h16v-2"/></svg></button>
+        <button class="iconbtn" title="导入字幕" @click="doImportSubtitle" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5l1 1h10v13H4z"/><path d="M12 9v5m0 0-2-2m2 2 2-2"/></svg></button>
         <button class="iconbtn" title="转写并翻译" @click="doTranscribe(true)" :disabled="!item || transcribing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg></button>
         <button v-if="transcribing" class="iconbtn" title="取消转写（whisper 推理中不可立即中断，最迟在本轮推理结束后生效）" @click="doCancelTranscribe"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:#e5484d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg></button>
         <button class="iconbtn" title="翻译" @click="doTranslate" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16"/></svg></button>

@@ -14,6 +14,13 @@ export function cancelTranscribe(id: number) {
   return invoke<void>("cancel_transcribe", { id });
 }
 
+export function importExternalSubtitle(mediaId: number, path?: string): Promise<number> {
+  return invoke<number>("import_external_subtitle", {
+    mediaId,
+    ...(path ? { path } : {}),
+  });
+}
+
 export function getSubtitles(id: number): Promise<Subtitle[]> {
   return invoke<Subtitle[]>("get_subtitles", { id });
 }

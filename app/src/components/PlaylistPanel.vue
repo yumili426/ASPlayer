@@ -15,6 +15,7 @@ const emit = defineEmits<{
   importFolder: [];
   refresh: [];
   close: [];
+  importSubtitle: [item: MediaItem];
 }>();
 
 const ctxMenu = ref<{ x: number; y: number; item: MediaItem } | null>(null);
@@ -81,6 +82,11 @@ function closeCtx() {
 function playItem(item: MediaItem) {
   emit("play", item);
   closeCtx();
+}
+
+function importSubtitle(item: MediaItem) {
+  closeCtx();
+  emit("importSubtitle", item);
 }
 
 async function revealInFolder(item: MediaItem) {
@@ -238,6 +244,9 @@ function fmtDuration(ms: number): string {
         <button class="pl-ctx-item" @click="playItem(ctxMenu!.item)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5l12 7-12 7z"/></svg>
           播放
+        </button>
+        <button class="pl-ctx-item" @click="importSubtitle(ctxMenu!.item)">
+          导入字幕
         </button>
         <button class="pl-ctx-item" @click="revealInFolder(ctxMenu!.item)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
