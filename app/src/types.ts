@@ -118,3 +118,20 @@ export interface DictProgress {
   total_bytes: number;
   percent: number;
 }
+
+export interface OllamaModel { name: string; size: number }
+export type PullStatus = "idle" | "downloading" | "done" | "failed" | "canceled";
+export interface PullState {
+  model: string | null;
+  status: PullStatus;
+  bytes: number;
+  total: number;
+  error?: string | null;
+}
+export interface OllamaStatus {
+  connected: boolean;
+  version?: string | null;
+  models: OllamaModel[];
+  pulling: PullState | null;
+}
+export interface OllamaProgress { model: string; bytes: number; total: number; percent: number }

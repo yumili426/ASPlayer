@@ -3,6 +3,7 @@ mod dict;
 mod floating;
 mod media;
 mod models;
+mod ollama;
 mod shortcuts;
 mod transcriber;
 
@@ -336,7 +337,11 @@ pub fn run() {
             dict::dict_status,
             dict::dict_download,
             dict::cancel_dict_download,
-            dict::dict_lookup
+            dict::dict_lookup,
+            // 本地翻译引擎（Ollama）
+            ollama::ollama_status,
+            ollama::ollama_pull,
+            ollama::cancel_ollama_pull
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

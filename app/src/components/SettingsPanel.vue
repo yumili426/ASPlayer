@@ -7,6 +7,8 @@ import { useShortcuts } from "../stores/shortcuts";
 import { usePlayback } from "../stores/playback";
 import type { ShortcutActionName } from "../types";
 import type { DictStatus, DictProgress } from "../types";
+import { ollamaStatus, ollamaPull, ollamaPullCancel, onOllamaStatus, onOllamaProgress } from "../api/ollama";
+import type { OllamaStatus, PullState } from "../types";
 import { useModels, MODEL_META } from "../stores/model";
 
 type TabKey = "appearance" | "playback" | "subtitle" | "translate" | "model" | "dict" | "shortcuts";
@@ -48,6 +50,105 @@ const dictUrlEn = ref("");
 const dictUrlJa = ref("");
 const dictUrlSaved = ref(false);
 let dictUrlTimer: ReturnType<typeof setTimeout> | null = null;
+
+// ---- 本地翻译引擎（Ollama）----
+const ollamaBase = ref("http://localhost:11434");
+const ollamaBaseSaved = ref(false);
+let ollamaTimer: ReturnType<typeof setTimeout> | null = null;
+const ollamaInfo = ref<OllamaStatus | null>(null);
+const ollamaPullState = ref<PullState | null>(null);
+let ollamaInit = false;
+const OLLAMA_RECOMMENDED = [
+  { model: "qwen2.5:3b", label: "小 · 约 1.9 GB" },
+  { model: "qwen2.5:7b", label: "中 · 约 4.7 GB" },
+] as const;
+
+async function initOllama() {
+  if (ollamaInit) return;
+  await onOllamaStatus((s) => (ollamaPullState.value = s));
+  await onOllamaProgress((p) => {
+    ollamaPullState.value = {
+      model: p.model,
+      status: "downloading",
+      bytes: p.bytes,
+      total: p.total,
+      error: null,
+    };
+  });
+  ollamaInit = true;
+}
+
+async function loadOllama() {
+  try {
+    ollamaInfo.value = await ollamaStatus();
+  } catch {
+    /* ignore */
+  }
+}
+
+async function onPullLocal(model: string) {
+  try {
+    await ollamaPull(model);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 拉取本地翻译模型失败:", e);
+  }
+}
+
+async function onCancelPullLocal() {
+  try {
+    await ollamaPullCancel();
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 取消拉取本地翻译模型失败:", e);
+  }
+}
+
+async function onSaveOllamaBase() {
+  try {
+    await saveSettings({ ollama_base: ollamaBase.value });
+    ollamaBaseSaved.value = true;
+    if (ollamaTimer) clearTimeout(ollamaTimer);
+    ollamaTimer = setTimeout(() => (ollamaBaseSaved.value = false), 1500);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 保存 Ollama 地址失败:", e);
+  }
+}
+
+// 一键接通：把翻译配置指向本地模型（api_base 用 base+"/v1"，api_key 留空）
+async function onUseLocal(model: string) {
+  try {
+    await saveSettings({
+      api_base: ollamaBase.value.replace(/\/+$/, "") + "/v1",
+      api_model: model,
+      api_key: "",
+    });
+    apiBase.value = ollamaBase.value.replace(/\/+$/, "") + "/v1";
+    apiModel.value = model;
+    apiKey.value = "";
+    providerIdx.value = -1; // 不匹配任何云端预设，落回「自定义」
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 一键接通本地模型失败:", e);
+  }
+}
+
+const ollamaConnected = computed(() => !!ollamaInfo.value?.connected);
+const localPulling = computed(() => ollamaPullState.value?.status === "downloading");
+const localPercent = computed(() => {
+  const s = ollamaPullState.value;
+  if (!s || !s.total) return 0;
+  return Math.min(100, Math.round((s.bytes / s.total) * 100));
+});
+
+// 拉取完成后自动刷新模型列表
+watch(
+  () => ollamaPullState.value?.status,
+  (status) => {
+    if (status === "done") loadOllama();
+  }
+);
 
 const cap = useCaptionStyle();
 const captionStyle = cap.captionStyle;
@@ -217,6 +318,7 @@ async function load() {
     providerIdx.value = matchProvider(apiBase.value, apiModel.value);
     dictUrlEn.value = s.dict_url_en ?? "";
     dictUrlJa.value = s.dict_url_ja ?? "";
+    ollamaBase.value = s.ollama_base ?? "http://localhost:11434";
   } catch {
     /* ignore */
   }
@@ -236,6 +338,8 @@ watch(
       await ms.loadModel();
       await initDict();
       await loadDict();
+      await initOllama();
+      await loadOllama();
       load(); // 既有：载入翻译/API 设置
     }
   }
@@ -547,6 +651,73 @@ function onClick(e: MouseEvent) {
         <button class="save-btn" :disabled="saving" @click="onSave">
           {{ saving ? "保存中…" : "保存" }}
         </button>
+
+      <div class="section-divider"></div>
+      <div class="section-label">本地翻译引擎（Ollama）</div>
+
+      <label class="field">
+        <span>Ollama 地址</span>
+        <div class="key-wrap">
+          <input v-model="ollamaBase" type="text" placeholder="http://localhost:11434" />
+          <button class="key-eye" title="保存" @click="onSaveOllamaBase">保存</button>
+        </div>
+        <small class="field-desc">默认 http://localhost:11434，改端口后点「保存」。</small>
+      </label>
+
+      <div v-if="!ollamaConnected" class="local-warn">
+        未检测到 Ollama 服务。请先<a href="https://ollama.com" target="_blank" rel="noopener">安装 Ollama</a> 并启动后点「重新检测」。
+      </div>
+      <div v-else class="local-ok">
+        已连接 Ollama{{ ollamaInfo?.version ? `（v${ollamaInfo.version}）` : "" }}。
+        <span v-if="ollamaInfo?.models.length">{{ ollamaInfo.models.length }} 个模型</span>
+      </div>
+      <div class="local-actions">
+        <button class="rs-btn" @click="loadOllama">重新检测</button>
+        <span v-if="ollamaBaseSaved" class="saved-hint">已保存</span>
+      </div>
+
+      <!-- 已拉取模型 -->
+      <div v-if="ollamaInfo?.models.length" class="model-list">
+        <div v-for="m in ollamaInfo.models" :key="m.name" class="sc-item">
+          <span class="sc-label">{{ m.name }}</span>
+          <span class="sc-controls">
+            <button class="sc-key sel" :disabled="localPulling" @click="onUseLocal(m.name)">用这个翻译</button>
+            <span class="dl-mid">{{ fmtBytes(m.size) }}</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- 推荐模型下载 -->
+      <div class="adv-item">推荐翻译模型</div>
+      <div class="model-list">
+        <div v-for="r in OLLAMA_RECOMMENDED" :key="r.model" class="sc-item">
+          <span class="sc-label">{{ r.model }}</span>
+          <span class="sc-controls">
+            <template v-if="localPulling && ollamaPullState?.model === r.model">
+              <span class="dl-mid">{{ localPercent }}%</span>
+              <button class="sc-clear" title="取消" @click="onCancelPullLocal">×</button>
+            </template>
+            <template v-else>
+              <span class="dl-mid">{{ r.label }}</span>
+              <button class="sc-key" :disabled="localPulling || !ollamaConnected" @click="onPullLocal(r.model)">下载</button>
+            </template>
+          </span>
+        </div>
+      </div>
+      <div v-if="localPulling && ollamaPullState?.model && !OLLAMA_RECOMMENDED.some((r) => r.model === ollamaPullState?.model)" class="model-list">
+        <div class="sc-item">
+          <span class="sc-label">{{ ollamaPullState.model }}</span>
+          <span class="sc-controls">
+            <span class="dl-mid">{{ localPercent }}%</span>
+            <button class="sc-clear" title="取消" @click="onCancelPullLocal">×</button>
+          </span>
+        </div>
+      </div>
+
+      <div v-if="localPulling && ollamaPullState" class="model-progress">
+        <div class="model-bar" :style="{ width: localPercent + '%' }"></div>
+      </div>
+      <p v-if="ollamaPullState?.status === 'failed' && ollamaPullState.error" class="dict-err">{{ ollamaPullState.error }}</p>
       </div>
 
       <div class="section" v-show="activeTab === 'model'">
@@ -1361,6 +1532,35 @@ function onClick(e: MouseEvent) {
   padding: 0 2px;
   white-space: pre-wrap;
 }
+.section-divider {
+  margin: 16px 0 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.local-warn {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.local-warn a { color: var(--accent); }
+.local-ok {
+  font-size: 12px;
+  color: var(--fg-2);
+  margin-bottom: 10px;
+}
+.local-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.local-actions .rs-btn { width: auto; padding: 6px 14px; flex: 0 0 auto; }
+.local-actions .saved-hint { margin: 0; }
 
 .dict-source {
   margin-top: 6px;

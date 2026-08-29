@@ -99,6 +99,27 @@ pub fn resolve_api_config(db: &MediaDb) -> ApiConfig {
     }
 }
 
+/// 是否指向本机服务（localhost / 127.x.x.x / [::1]）。
+/// 本机服务（如本地 Ollama）通常无需 API Key，翻译时允许空 key 放行；云端服务仍强制要求。
+fn is_local_base(base: &str) -> bool {
+    let b = base.trim().to_ascii_lowercase();
+    if b.is_empty() {
+        return false;
+    }
+    let host_port = b.split("://").nth(1).unwrap_or(&b).split('/').next().unwrap_or("");
+    let host = if let Some(rest) = host_port.strip_prefix('[') {
+        rest.split(']').next().unwrap_or("")
+    } else {
+        host_port.split(':').next().unwrap_or("")
+    };
+    if host == "localhost" || host == "::1" || host == "0.0.0.0" {
+        return true;
+    }
+    host.parse::<std::net::Ipv4Addr>()
+        .map(|ip| ip.is_loopback())
+        .unwrap_or(false)
+}
+
 fn emit_progress(app: &AppHandle, media_id: i64, stage: &str, progress: u8, message: &str) {
     let _ = app.emit(
         EVENT_PROGRESS,
@@ -325,7 +346,7 @@ pub fn run_translation(app: AppHandle, db: Arc<Mutex<MediaDb>>, media_id: i64) {
     let cfg = with_db(&db, |d| Ok(resolve_api_config(d))).unwrap_or_else(|_| {
         ApiConfig { api_base: String::new(), api_key: String::new(), model: "deepseek-chat".into() }
     });
-    if cfg.api_key.is_empty() {
+    if cfg.api_key.is_empty() && !is_local_base(&cfg.api_base) {
         let _ = app.emit(EVENT_ERROR, "未配置翻译 API Key（请设置 ASPLAYER_API_KEY 或在设置面板填写）".to_string());
         return;
     }
@@ -382,5 +403,26 @@ pub fn run_translation(app: AppHandle, db: Arc<Mutex<MediaDb>>, media_id: i64) {
 
     emit_progress(&app, media_id, "done", 100, "翻译完成");
     let _ = app.emit(EVENT_DONE, media_id);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_local_base;
+
+    #[test]
+    fn local_bases_allow_empty_key() {
+        assert!(is_local_base("http://localhost:11434/v1"));
+        assert!(is_local_base("localhost:11434"));
+        assert!(is_local_base("http://127.0.0.1:11434/v1"));
+        assert!(is_local_base("http://[::1]:11434/v1"));
+    }
+
+    #[test]
+    fn remote_bases_require_key() {
+        assert!(!is_local_base("https://api.deepseek.com/v1"));
+        assert!(!is_local_base("https://api.openai.com/v1"));
+        assert!(!is_local_base("http://192.168.1.5:11434/v1"));
+        assert!(!is_local_base(""));
+    }
 }
 
