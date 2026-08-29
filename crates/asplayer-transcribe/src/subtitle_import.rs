@@ -64,6 +64,53 @@ fn sort_by_start(segs: &mut [Segment]) {
     segs.sort_by_key(|s| s.start_ms);
 }
 
+/// VTT 时间行：`start --> end[ settings]`（settings 丢弃）。
+fn parse_cue_timeline(line: &str) -> Option<(u64, u64)> {
+    let mut it = line.split("-->");
+    let start = parse_timestamp(it.next()?)?;
+    let end_part = it.next()?.split_whitespace().next()?;
+    let end = parse_timestamp(end_part)?;
+    Some((start, end))
+}
+
+/// 解析 VTT 文本 → 段序列（跳过 WEBVTT 头 / NOTE / STYLE / REGION，丢弃 cue settings）。
+pub fn parse_vtt(input: &str) -> Vec<Segment> {
+    let normalized = input.replace("\r\n", "\n");
+    let lines: Vec<&str> = normalized.lines().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        if line.starts_with("NOTE") || line.starts_with("STYLE") || line.starts_with("REGION") {
+            i += 1;
+            while i < lines.len() && !lines[i].trim().is_empty() {
+                i += 1;
+            }
+            continue;
+        }
+        if line.contains("-->") {
+            if let Some((start, end)) = parse_cue_timeline(line) {
+                if end > start {
+                    let mut text_lines = Vec::new();
+                    i += 1;
+                    while i < lines.len() && !lines[i].trim().is_empty() {
+                        text_lines.push(lines[i]);
+                        i += 1;
+                    }
+                    let text = cleanup_text(&text_lines.join("\n"));
+                    if !text.is_empty() {
+                        out.push(Segment { start_ms: start, end_ms: end, text });
+                    }
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+    sort_by_start(&mut out);
+    out
+}
+
 /// 解析 SRT 文本 → 段序列（升序、滤 `end<=start`、滤空文本）。
 pub fn parse_srt(input: &str) -> Vec<Segment> {
     let normalized = input.replace("\r\n", "\n");
@@ -122,5 +169,23 @@ mod tests {
     fn parse_srt_skips_invalid_end_and_empty_text() {
         assert!(parse_srt("1\n00:00:02,000 --> 00:00:01,000\nbad\n").is_empty());
         assert!(parse_srt("1\n00:00:00,000 --> 00:00:01,000\n\n").is_empty());
+    }
+
+    #[test]
+    fn parse_vtt_basic_with_settings() {
+        let s = "WEBVTT\n\n00:00:00.000 --> 00:00:01.500\nhello\n\n00:00:02.000 --> 00:00:03.000 align:start\nworld\n";
+        let r = parse_vtt(s);
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0].text, "hello");
+        assert_eq!(r[1].text, "world");
+        assert_eq!(r[1].start_ms, 2000);
+    }
+
+    #[test]
+    fn parse_vtt_ignores_note_style_region() {
+        let s = "WEBVTT\n\nNOTE\nthis is a note line\n\nSTYLE\n::cue { color: red }\n\n00:00:00.000 --> 00:00:01.000\ntext here\n";
+        let r = parse_vtt(s);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].text, "text here");
     }
 }
