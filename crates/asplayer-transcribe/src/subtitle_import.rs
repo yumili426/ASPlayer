@@ -1,4 +1,5 @@
 use crate::srt::Segment;
+use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 /// MM:SS / HH:MM:SS + 毫秒（分隔符兼容 , 或 .）。返回毫秒。小时可省略。
@@ -111,6 +112,43 @@ pub fn parse_vtt(input: &str) -> Vec<Segment> {
     out
 }
 
+/// 按扩展名分派解析文件；含字符集处理（BOM → UTF-8 → GBK 回退）。
+pub fn parse_subtitle_file(path: &Path) -> Result<Vec<Segment>> {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    let bytes = std::fs::read(path).with_context(|| format!("读取字幕文件失败: {}", path.display()))?;
+    let text = decode_subtitle_bytes(&bytes)?;
+    match ext.as_str() {
+        "srt" => Ok(parse_srt(&text)),
+        "vtt" => Ok(parse_vtt(&text)),
+        other => bail!("不支持的字幕格式: .{other}（支持 srt / vtt）"),
+    }
+}
+
+fn decode_subtitle_bytes(bytes: &[u8]) -> Result<String> {
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        return Ok(String::from_utf8_lossy(&bytes[3..]).into_owned());
+    }
+    if bytes.starts_with(&[0xFF, 0xFE]) {
+        let conv: Vec<u16> = bytes[2..].chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        return Ok(String::from_utf16_lossy(&conv));
+    }
+    if bytes.starts_with(&[0xFE, 0xFF]) {
+        let conv: Vec<u16> = bytes[2..].chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
+        return Ok(String::from_utf16_lossy(&conv));
+    }
+    match std::str::from_utf8(bytes) {
+        Ok(s) => Ok(s.to_string()),
+        Err(_) => {
+            let (decoded, _, _) = encoding_rs::GBK.decode(bytes);
+            Ok(decoded.into_owned())
+        }
+    }
+}
+
 /// 解析 SRT 文本 → 段序列（升序、滤 `end<=start`、滤空文本）。
 pub fn parse_srt(input: &str) -> Vec<Segment> {
     let normalized = input.replace("\r\n", "\n");
@@ -187,5 +225,48 @@ mod tests {
         let r = parse_vtt(s);
         assert_eq!(r.len(), 1);
         assert_eq!(r[0].text, "text here");
+    }
+
+    #[test]
+    fn parse_subtitle_file_gbk() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let p = dir.path().join("t.srt");
+        let mut bytes = b"1\n00:00:00,000 --> 00:00:01,000\n".to_vec();
+        bytes.extend_from_slice(&[0xC4, 0xE3, 0xBA, 0xC3]); // "你好" 的 GBK
+        std::fs::write(&p, bytes)?;
+        let segs = parse_subtitle_file(&p)?;
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].text, "你好");
+        Ok(())
+    }
+
+    #[test]
+    fn parse_subtitle_file_utf16le_bom() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let p = dir.path().join("t.srt");
+        let text = "1\n00:00:00,000 --> 00:00:01,000\nhi\n";
+        let mut bytes = vec![0xFF, 0xFE];
+        for u in text.encode_utf16() {
+            bytes.extend_from_slice(&u.to_le_bytes());
+        }
+        std::fs::write(&p, bytes)?;
+        let segs = parse_subtitle_file(&p)?;
+        assert_eq!(segs.len(), 1);
+        assert_eq!(segs[0].text, "hi");
+        Ok(())
+    }
+
+    #[test]
+    fn parse_subtitle_file_unknown_ext_rejected() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let p = dir.path().join("t.txt");
+        std::fs::write(&p, "1\n00:00:00,000 --> 00:00:01,000\nhi\n")?;
+        assert!(parse_subtitle_file(&p).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn parse_subtitle_file_missing_file_errors() {
+        assert!(parse_subtitle_file(Path::new("Z:/nope/nothing.srt")).is_err());
     }
 }
