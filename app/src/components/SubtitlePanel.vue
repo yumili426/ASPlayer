@@ -80,7 +80,8 @@ function stageLabel() {
     <!-- 错误 -->
     <div v-else-if="status === 'error'" class="sp-empty">
       <p>字幕生成失败</p>
-      <p class="sp-empty-sub">请检查模型 / API 配置后重试</p>
+      <p v-if="message" class="sp-empty-sub">{{ message }}</p>
+      <p v-else class="sp-empty-sub">请检查模型 / API 配置后重试</p>
     </div>
 
     <!-- 无字幕 -->

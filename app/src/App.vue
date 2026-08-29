@@ -139,7 +139,7 @@ async function onImportSubtitle(mediaId: number) {
   });
   if (!sel) return;
   const path = Array.isArray(sel) ? sel[0] : sel;
-  const [st] = await getSubtitleStatus(mediaId).catch(() => ["none" as string, "" as string]);
+  const [st] = await getSubtitleStatus(mediaId).catch(() => ["unknown" as string, "" as string]);
   if (st !== "none") {
     const ok = window.confirm("导入将替换该媒体现有的字幕，继续？");
     if (!ok) return;
