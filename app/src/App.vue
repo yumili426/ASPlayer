@@ -156,7 +156,10 @@ async function onImportSubtitle(mediaId: number) {
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error("[ASPlayer] 导入字幕失败:", e);
-    sub.setStatus("error", "", 0, String(e));
+    // 仅失败的是当前媒体时才改写字幕面板状态，避免非当前媒体的导入错误污染正在播放的媒体
+    if (sub.currentId.value === mediaId) {
+      sub.setStatus("error", "", 0, String(e));
+    }
   }
 }
 
