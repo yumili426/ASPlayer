@@ -91,3 +91,30 @@ export interface ModelProgress {
   total_bytes: number;
   percent: number;
 }
+
+export interface DictStatus {
+  lang: string;
+  raw_exists: boolean;
+  raw_bytes: number;
+  db_exists: boolean;
+  db_bytes: number;
+  status: "idle" | "downloading" | "done" | "failed" | "canceled";
+  error: string | null;
+}
+
+export interface DictLookup {
+  term: string;
+  lang: string;
+  phonetic: string | null;
+  reading: string | null;
+  pos: string | null;
+  definitions: string[];
+  suggestions: string[];
+}
+
+export interface DictProgress {
+  lang: string;
+  bytes_downloaded: number;
+  total_bytes: number;
+  percent: number;
+}

@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref, watch, computed } from "vue";
 import { getSettings, saveSettings, getEnvApiConfig } from "../api/subtitle";
+import { dictStatus, dictDownload, dictCancel, onDictStatus, onDictProgress } from "../api/dict";
 import { useCaptionStyle } from "../stores/captionStyle";
 import { useShortcuts } from "../stores/shortcuts";
 import { usePlayback } from "../stores/playback";
 import type { ShortcutActionName } from "../types";
+import type { DictStatus, DictProgress } from "../types";
 import { useModels, MODEL_META } from "../stores/model";
 
-type TabKey = "appearance" | "playback" | "subtitle" | "translate" | "model" | "shortcuts" | "vad";
+type TabKey = "appearance" | "playback" | "subtitle" | "translate" | "model" | "dict" | "shortcuts";
 
 const props = defineProps<{ open: boolean; theme: "light" | "dark" | "system" }>();
 const emit = defineEmits<{ close: []; setTheme: [theme: "light" | "dark" | "system"] }>();
@@ -39,6 +41,13 @@ const providerIdx = ref(-1); // -1 = 自定义，不匹配任何预设
 const saving = ref(false);
 const showKey = ref(false);
 const envKey = ref("");
+const showAdv = ref(false); // 「模型」页里折叠的转写高级参数
+const vadSaved = ref(false);
+let vadSaveTimer: ReturnType<typeof setTimeout> | null = null;
+const dictUrlEn = ref("");
+const dictUrlJa = ref("");
+const dictUrlSaved = ref(false);
+let dictUrlTimer: ReturnType<typeof setTimeout> | null = null;
 
 const cap = useCaptionStyle();
 const captionStyle = cap.captionStyle;
@@ -63,13 +72,84 @@ const tabs: { key: TabKey; label: string }[] = [
   { key: "subtitle", label: "字幕" },
   { key: "translate", label: "翻译" },
   { key: "model", label: "模型" },
+  { key: "dict", label: "词典" },
   { key: "shortcuts", label: "快捷键" },
-  { key: "vad", label: "转写切片" },
 ];
 
 const sc = useShortcuts();
 const pb = usePlayback();
 const ms = useModels();
+// ---- 内置词典：设置页下载管理 ----
+const dictStatuses = ref<DictStatus[]>([]);
+const dictProgress = ref<DictProgress[]>([]);
+let dictInit = false; // 事件只订阅一次（与 useModels 同思路），状态每次打开面板刷新
+
+async function initDict() {
+  if (dictInit) return;
+  await onDictStatus((s) => {
+    const i = dictStatuses.value.findIndex((x) => x.lang === s.lang);
+    if (i >= 0) dictStatuses.value[i] = s;
+    else dictStatuses.value.push(s);
+  });
+  await onDictProgress((p) => {
+    const i = dictProgress.value.findIndex((x) => x.lang === p.lang);
+    if (i >= 0) dictProgress.value[i] = p;
+    else dictProgress.value.push(p);
+  });
+  dictInit = true;
+}
+
+async function loadDict() {
+  try {
+    dictStatuses.value = await dictStatus();
+  } catch {
+    /* ignore */
+  }
+}
+
+async function onDictDownload(lang: string) {
+  try {
+    await dictDownload(lang);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 下载词典失败:", e);
+  }
+}
+
+async function onDictCancel(lang: string) {
+  try {
+    await dictCancel(lang);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 取消下载词典失败:", e);
+  }
+}
+
+function dictStatusText(s: DictStatus): string {
+  switch (s.status) {
+    case "done": return "已就绪";
+    case "downloading": return "下载中";
+    case "failed": return "下载失败";
+    case "canceled": return "已取消";
+    default: return "未下载";
+  }
+}
+
+function dictPercent(lang: string): number {
+  const p = dictProgress.value.find((x) => x.lang === lang);
+  return p ? Math.min(100, Math.round(p.percent)) : 0;
+}
+
+function fmtBytes(n: number): string {
+  if (n <= 0) return "";
+  const mb = n / (1024 * 1024);
+  return mb >= 1024 ? (mb / 1024).toFixed(1) + " GB" : mb.toFixed(1) + " MB";
+}
+
+const downloadingLang = computed(
+  () => dictStatuses.value.find((s) => s.status === "downloading")?.lang ?? null
+);
+
 const selectedFileExists = computed(() => {
   const s = ms.modelState.models.find((m) => m.selected);
   return !!s && s.file_exists;
@@ -135,6 +215,8 @@ async function load() {
     vadMinChunkMs.value = Number(s.vad_min_chunk_ms ?? 1000);
     vadMaxChunkMs.value = Number(s.vad_max_chunk_ms ?? 30000);
     providerIdx.value = matchProvider(apiBase.value, apiModel.value);
+    dictUrlEn.value = s.dict_url_en ?? "";
+    dictUrlJa.value = s.dict_url_ja ?? "";
   } catch {
     /* ignore */
   }
@@ -152,6 +234,8 @@ watch(
     if (open) {
       await ms.initModel();
       await ms.loadModel();
+      await initDict();
+      await loadDict();
       load(); // 既有：载入翻译/API 设置
     }
   }
@@ -173,6 +257,48 @@ async function onSave() {
   } finally {
     saving.value = false;
   }
+}
+
+// 「模型」页高级折叠内的转写参数保存：只存 4 个 vad key，不关闭面板
+async function onSaveVad() {
+  saving.value = true;
+  try {
+    await saveSettings({
+      vad_window_ms: String(vadWindowMs.value),
+      vad_min_silence_ms: String(vadMinSilenceMs.value),
+      vad_min_chunk_ms: String(vadMinChunkMs.value),
+      vad_max_chunk_ms: String(vadMaxChunkMs.value),
+    });
+    vadSaved.value = true;
+    if (vadSaveTimer) clearTimeout(vadSaveTimer);
+    vadSaveTimer = setTimeout(() => (vadSaved.value = false), 1500);
+  } finally {
+    saving.value = false;
+  }
+}
+
+function resetVad() {
+  vadWindowMs.value = 30;
+  vadMinSilenceMs.value = 300;
+  vadMinChunkMs.value = 1000;
+  vadMaxChunkMs.value = 30000;
+}
+
+async function onSaveDictUrl() {
+  try {
+    await saveSettings({ dict_url_en: dictUrlEn.value, dict_url_ja: dictUrlJa.value });
+    dictUrlSaved.value = true;
+    if (dictUrlTimer) clearTimeout(dictUrlTimer);
+    dictUrlTimer = setTimeout(() => (dictUrlSaved.value = false), 1500);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 保存词典源地址失败:", e);
+  }
+}
+
+function resetDictUrl() {
+  dictUrlEn.value = "";
+  dictUrlJa.value = "";
 }
 
 function onClick(e: MouseEvent) {
@@ -471,32 +597,100 @@ function onClick(e: MouseEvent) {
         <p class="hint">
           建议用 small（466MB）兼顾体积与 ASMR 识别率。无 N 卡可跳过本地模型，直接在「翻译」页配置云端 API。
         </p>
+
+        <div class="adv-box">
+          <button class="adv-toggle" @click="showAdv = !showAdv">
+            <span>高级</span>
+            <svg :class="{ open: showAdv }" viewBox="0 0 24 24" fill="none" :style="{ stroke: 'var(--fg-2)' }" stroke-width="1.8"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+
+          <div v-show="showAdv" class="adv-body">
+            <div class="adv-item">转写分段参数</div>
+            <label class="field">
+              <span>单段最长时间</span>
+              <input v-model.number="vadMaxChunkMs" type="number" min="1000" max="120000" />
+              <small class="field-desc">一句话转写最长不超过它；越短，进度更新更勤、取消也越及时。</small>
+            </label>
+            <label class="field">
+              <span>停顿判定</span>
+              <input v-model.number="vadMinSilenceMs" type="number" min="100" max="5000" />
+              <small class="field-desc">一句话停顿超过这段时间，就分成两段。</small>
+            </label>
+            <label class="field">
+              <span>最小分段</span>
+              <input v-model.number="vadMinChunkMs" type="number" min="200" max="10000" />
+              <small class="field-desc">太短的内容会和前后并成一句，通常无需改动。</small>
+            </label>
+            <label class="field">
+              <span>检测窗口</span>
+              <input v-model.number="vadWindowMs" type="number" min="10" max="200" />
+              <small class="field-desc">底层算法参数，保持默认即可。</small>
+            </label>
+
+            <div class="adv-actions">
+              <button class="rs-btn" @click="resetVad">恢复默认</button>
+              <button class="save-btn" :disabled="saving" @click="onSaveVad">
+                {{ saving ? "保存中…" : "保存" }}
+              </button>
+            </div>
+            <p class="saved-hint" v-if="vadSaved">已保存</p>
+          </div>
+        </div>
       </div>
 
-      <div class="section" v-show="activeTab === 'vad'">
-        <div class="section-label">转写切片</div>
+      <div class="section" v-show="activeTab === 'dict'">
+        <div class="section-label">词典</div>
+        <p class="hint">右键字幕行中的单词即可在应用内查词。首次使用需下载对应语言词典，离线可用。</p>
 
-        <label class="field">
-          <span>RMS 窗长 (ms)</span>
-          <input v-model.number="vadWindowMs" type="number" min="10" max="200" />
-        </label>
-        <label class="field">
-          <span>最小静音 (ms)</span>
-          <input v-model.number="vadMinSilenceMs" type="number" min="100" max="5000" />
-        </label>
-        <label class="field">
-          <span>最小块长 (ms)</span>
-          <input v-model.number="vadMinChunkMs" type="number" min="200" max="10000" />
-        </label>
-        <label class="field">
-          <span>最大块长 (ms)</span>
-          <input v-model.number="vadMaxChunkMs" type="number" min="1000" max="120000" />
-        </label>
+        <div class="model-list">
+          <div v-if="!dictStatuses.length" class="hint">加载中…</div>
+          <div v-for="s in dictStatuses" :key="s.lang" class="dict-item">
+            <div class="sc-item">
+              <span class="sc-label">
+                {{ s.lang === "en" ? "英文 ECDICT" : "日文 JMdict" }}
+                <span v-if="s.status === 'done'" class="model-badge">已就绪</span>
+              </span>
 
-        <p class="hint">切块参数影响转写进度粒度与取消响应速度，默认值即可正常使用。</p>
-        <button class="save-btn" :disabled="saving" @click="onSave">
-          {{ saving ? "保存中…" : "保存" }}
-        </button>
+              <span v-if="s.status === 'downloading'" class="sc-controls">
+                <span class="dl-mid">{{ dictPercent(s.lang) }}%</span>
+                <button class="sc-clear" title="取消下载" @click="onDictCancel(s.lang)">×</button>
+              </span>
+              <span v-else-if="s.status === 'done'" class="sc-controls">
+                <span class="dl-mid">{{ fmtBytes(s.db_bytes) }}</span>
+              </span>
+              <span v-else class="sc-controls">
+                <button class="sc-key" @click="onDictDownload(s.lang)">{{ dictStatusText(s) }}</button>
+              </span>
+            </div>
+            <p v-if="s.status === 'failed' && s.error" class="dict-err">{{ s.error }}</p>
+          </div>
+        </div>
+
+        <div class="dict-source">
+          <div class="dict-source-label">词典源地址（镜像）</div>
+          <p class="hint">留空自动依次尝试官方源与内置镜像（国内可直接下载）；仅当内置源全部失效时，才需在此填写可用的镜像地址。</p>
+          <label class="field">
+            <span>英文 ECDICT</span>
+            <input v-model="dictUrlEn" type="text" placeholder="https://..." />
+          </label>
+          <label class="field">
+            <span>日文 JMdict</span>
+            <input v-model="dictUrlJa" type="text" placeholder="http://..." />
+          </label>
+          <div class="dict-source-actions">
+            <button class="rs-btn" @click="resetDictUrl">恢复默认</button>
+            <button class="save-btn" :disabled="saving" @click="onSaveDictUrl">
+              {{ saving ? "保存中…" : "保存" }}
+            </button>
+          </div>
+          <p class="saved-hint" v-if="dictUrlSaved">已保存</p>
+        </div>
+
+        <div v-if="downloadingLang" class="model-progress">
+          <div class="model-bar" :style="{ width: dictPercent(downloadingLang) + '%' }"></div>
+        </div>
+
+        <p class="hint">已下载原始文件与生成的词典体积见上文；任一下载中时，其余语言会稍后再下（一次只下载一种）。</p>
       </div>
 
       <div class="foot-hint">更多设置项将在后续里程碑加入（快捷键、字幕样式等）</div>
@@ -1077,4 +1271,123 @@ function onClick(e: MouseEvent) {
   background: var(--accent);
   transition: width 0.2s ease;
 }
+
+.adv-box {
+  margin-top: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.adv-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.adv-toggle:hover {
+  background: var(--bg-2);
+  color: var(--fg-1);
+}
+
+.adv-toggle svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s ease;
+}
+
+.adv-toggle svg.open {
+  transform: rotate(180deg);
+}
+
+.adv-body {
+  margin-top: 6px;
+  padding: 4px 2px 0;
+}
+
+.adv-item {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-2);
+  padding: 8px 2px;
+}
+
+.field-desc {
+  display: block;
+  font-size: 11px;
+  color: var(--fg-3);
+  line-height: 1.5;
+}
+
+.adv-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.adv-actions .rs-btn {
+  flex: 1;
+}
+
+.adv-actions .save-btn {
+  flex: 2;
+}
+
+.saved-hint {
+  font-size: 12px;
+  color: var(--accent);
+  margin-top: 8px;
+  text-align: right;
+}
+
+.dict-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dict-err {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #e5484d;
+  padding: 0 2px;
+  white-space: pre-wrap;
+}
+
+.dict-source {
+  margin-top: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  margin-bottom: 12px;
+}
+
+.dict-source-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-2);
+  padding: 8px 2px;
+}
+
+.dict-source-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.dict-source-actions .rs-btn {
+  flex: 1;
+}
+
+.dict-source-actions .save-btn {
+  flex: 2;
+}
+
 </style>

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/asplayer-transcribe", "app/src-tauri"]
+members = ["crates/asplayer-transcribe", "crates/asplayer-dict", "app/src-tauri"]
 
 [profile.release]
 lto = true

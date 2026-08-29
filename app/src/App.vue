@@ -5,7 +5,9 @@ import PlayerStage from "./components/PlayerStage.vue";
 import PlaylistPanel from "./components/PlaylistPanel.vue";
 import SubtitlePanel from "./components/SubtitlePanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
-import type { MediaItem } from "./types";
+import DictCard from "./components/DictCard.vue";
+import type { MediaItem, DictLookup } from "./types";
+import { dictDownload, dictLookup, onDictStatus } from "./api/dict";
 import { useSubtitle } from "./stores/subtitle";
 import { useShortcuts } from "./stores/shortcuts";
 import { listen } from "@tauri-apps/api/event";
@@ -38,6 +40,54 @@ const showSubtitle = ref(true);
 const stageFullscreen = ref(false);
 const unlisteners: (() => void)[] = [];
 const stageRef = ref<any>(null);
+
+// ---- 内置词典查词 ----
+const dictOpen = ref(false);
+const dictLoading = ref(false);
+const dictResult = ref<DictLookup | null>(null);
+const dictError = ref<string | null>(null); // 查询失败（区别于词典未安装）
+const dictDownloading = ref(false);
+let dictTerm = ""; // 最近一次查询的词，用于「下载词典」判定语言
+let dictSeq = 0; // 查询序号：丢弃过期响应，防止慢的旧查询覆盖新结果
+
+/** `dict_lookup` 未命中时的占位条：definitions 与 suggestions 皆空即"真未查到" */
+async function onDictLookup(term: string) {
+  const seq = ++dictSeq;
+  dictTerm = term;
+  dictOpen.value = true;
+  dictLoading.value = true;
+  dictResult.value = null;
+  dictError.value = null;
+  try {
+    const res = await dictLookup(term);
+    if (seq !== dictSeq) return; // 已有更新的查询，丢弃过期结果
+    dictResult.value = res[0] ?? null;
+  } catch (e) {
+    if (seq !== dictSeq) return;
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 查词失败:", e);
+    dictError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    if (seq === dictSeq) dictLoading.value = false;
+  }
+}
+
+/** 推断查词语言：含假名（平/片假名，含长音与叠字）→ ja，否则 → en（与 Rust detect_lang 一致） */
+function dictLangOf(term: string): "en" | "ja" {
+  return /[ぁ-ゖゝゞーァ-ヺｦ-ﾟ]/.test(term) ? "ja" : "en";
+}
+
+async function onDictDownload() {
+  const lang = dictLangOf(dictTerm);
+  dictDownloading.value = true;
+  try {
+    await dictDownload(lang);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 下载词典失败:", e);
+    dictDownloading.value = false;
+  }
+}
 
 const THEME_KEY = "asplayer-theme-v2";
 const saved = (() => {
@@ -298,6 +348,11 @@ watch(
   () => overlayResetFeed()
 );
 watch(sub.subtitles, () => overlayResetFeed());
+// 换媒体后旧词典卡片已过期，复位查词状态
+watch(() => sub.currentId.value, () => {
+  dictOpen.value = false;
+  dictResult.value = null;
+});
 
 /** 全局快捷键转发来的动作（主窗口最小化/失焦时依然生效） */
 function onGlobalAction(action: string) {
@@ -378,6 +433,12 @@ onMounted(async () => {
     onGlobalAction(e.payload ?? "");
   });
   unlisteners.push(u5, u6, u8, u9);
+  // 词典下载状态（一次只下载一种语言，后端 ACTIVE 互斥；终端状态即下载结束）
+  const u10 = await onDictStatus((s) => {
+    if (s.status === "downloading") dictDownloading.value = true;
+    else if (s.status === "done" || s.status === "failed" || s.status === "canceled") dictDownloading.value = false;
+  });
+  unlisteners.push(u10);
   window.addEventListener("keydown", onKeydown);
   refresh();
   // 同步悬浮窗初始状态（Rust 侧是事实来源）
@@ -423,6 +484,17 @@ onUnmounted(() => {
       @close="showSubtitle = false"
       @seek="seekTo"
       @cancel="onCancelTranscribe"
+      @lookup="onDictLookup"
+    />
+    <DictCard
+      :open="dictOpen"
+      :loading="dictLoading"
+      :result="dictResult"
+      :error="dictError"
+      :downloading="dictDownloading"
+      @close="dictOpen = false"
+      @lookup="onDictLookup"
+      @download="onDictDownload"
     />
     <PlaylistPanel
       v-if="showPlaylist && !stageFullscreen"

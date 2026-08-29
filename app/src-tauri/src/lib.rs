@@ -1,4 +1,5 @@
 mod db;
+mod dict;
 mod floating;
 mod media;
 mod models;
@@ -279,6 +280,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             resolve_ffmpeg();
             let dir: PathBuf = app.path().app_data_dir()?;
@@ -329,7 +331,12 @@ pub fn run() {
             models::download_model,
             models::cancel_model_download,
             models::set_model,
-            models::remove_model
+            models::remove_model,
+            // 内置词典
+            dict::dict_status,
+            dict::dict_download,
+            dict::cancel_dict_download,
+            dict::dict_lookup
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
