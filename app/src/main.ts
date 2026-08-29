@@ -1,6 +1,7 @@
 import { createApp } from "vue";
 import App from "./App.vue";
 import FloatingOverlay from "./windows/FloatingOverlay.vue";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./styles/tokens.css";
 
 // 主题存储 key（带版本，避免旧 localStorage 干扰）
@@ -27,6 +28,10 @@ if (params.get("window") === "overlay") {
   document.body.style.background = "transparent";
   createApp(FloatingOverlay).mount("#app");
 } else {
+  // 主窗口：让原生标题栏跟随应用主题。手动 light/dark 时固定该主题（避免系统浅色
+  // 主题下启动瞬间的白色顶栏）；system 时传 null 让原生窗口跟随系统。
+  // App.vue 的 applyTheme() 负责后续跟随切换。
+  getCurrentWindow().setTheme(saved === "light" || saved === "dark" ? resolved : null).catch(() => {});
   createApp(App).mount("#app");
 }
 

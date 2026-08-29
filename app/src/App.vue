@@ -11,6 +11,7 @@ import { dictDownload, dictLookup, onDictStatus } from "./api/dict";
 import { useSubtitle } from "./stores/subtitle";
 import { useShortcuts } from "./stores/shortcuts";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   isOverlayLocked,
   isOverlayVisible,
@@ -105,6 +106,9 @@ function applyTheme() {
   const resolved =
     theme.value === "system" ? (prefersDark.matches ? "dark" : "light") : theme.value;
   document.documentElement.dataset.theme = resolved;
+  // 原生标题栏跟随应用主题：手动 light/dark 时固定该主题；system 时传 null 让原生窗口
+  // 跟随系统（内容走 data-theme + 标题栏走系统，二者随系统同步变化，不会互相漂移）
+  getCurrentWindow().setTheme(theme.value === "system" ? null : resolved).catch(() => {});
 }
 applyTheme();
 
