@@ -6,7 +6,7 @@ mod shortcuts;
 mod transcriber;
 
 use db::MediaDb;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, State};
 
@@ -176,6 +176,34 @@ fn cancel_transcribe(id: i64, state: State<AppState>) -> CmdResult<bool> {
     Ok(false)
 }
 
+/// 执行外部字幕导入：解析 path → 替换 media 字幕（置 done、断点清零）→ 返回段数。
+fn import_external(db: &MediaDb, media_id: i64, path: &Path) -> anyhow::Result<usize> {
+    let segs = asplayer_transcribe::subtitle_import::parse_subtitle_file(path)?;
+    if segs.is_empty() {
+        anyhow::bail!("未解析到任何字幕");
+    }
+    db.replace_subtitles(media_id, &segs)
+        .map_err(|e| anyhow::anyhow!("写入字幕失败: {e}"))?;
+    Ok(segs.len())
+}
+
+/// 导入外部字幕：path=None 时按同名自动检测；成功返回段数。
+#[tauri::command]
+fn import_external_subtitle(
+    media_id: i64,
+    path: Option<String>,
+    state: State<AppState>,
+) -> CmdResult<usize> {
+    let db = state.db.lock().map_err(err_str)?;
+    let (media_path, _title) = db.media_path(media_id).map_err(err_str)?;
+    let resolved = match path {
+        Some(p) => PathBuf::from(p),
+        None => media::find_sibling_subtitle(Path::new(&media_path))
+            .ok_or_else(|| "未找到同名字幕文件，请手动选择".to_string())?,
+    };
+    import_external(&db, media_id, &resolved).map_err(err_str)
+}
+
 /// 保存每文件播放参数（速度/音量），前端变更后防抖调用
 #[tauri::command]
 fn save_playback_params(id: i64, speed: f64, volume: f64, state: State<AppState>) -> CmdResult<()> {
@@ -281,6 +309,7 @@ pub fn run() {
             get_playback_params,
             get_subtitles,
             get_subtitle_status,
+            import_external_subtitle,
             save_settings,
             get_settings,
             get_env_api_config,
@@ -310,5 +339,52 @@ pub fn run() {
                 shortcuts::unregister_all(app);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn import_external_parses_and_replaces() -> anyhow::Result<()> {
+        let db = MediaDb::open_in_memory()?;
+        let id = db.upsert_media("D:/m/a.mp4", "a", "video", 0)?;
+        db.save_subtitle(id, 0, 1000, "old", "", 0)?;
+        db.set_transcribe_next_ms(id, 2500)?;
+
+        let dir = tempfile::tempdir()?;
+        let srt = dir.path().join("a.srt");
+        let mut f = std::fs::File::create(&srt)?;
+        writeln!(f, "1")?;
+        writeln!(f, "00:00:00,000 --> 00:00:01,500")?;
+        writeln!(f, "hello")?;
+        writeln!(f)?;
+        writeln!(f, "2")?;
+        writeln!(f, "00:00:02,000 --> 00:00:03,000")?;
+        writeln!(f, "world")?;
+
+        let n = import_external(&db, id, &srt)?;
+        assert_eq!(n, 2);
+        let rows = db.get_subtitles(id)?;
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].text, "hello");
+        assert_eq!(rows[1].text, "world");
+        let (status, _) = db.get_subtitle_status(id)?;
+        assert_eq!(status, "done");
+        assert_eq!(db.get_transcribe_next_ms(id)?, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn import_external_empty_file_rejected() -> anyhow::Result<()> {
+        let db = MediaDb::open_in_memory()?;
+        let id = db.upsert_media("D:/m/a.mp4", "a", "video", 0)?;
+        let dir = tempfile::tempdir()?;
+        let srt = dir.path().join("a.srt");
+        std::fs::write(&srt, "")?;
+        assert!(import_external(&db, id, &srt).is_err());
+        Ok(())
+    }
 }
 
