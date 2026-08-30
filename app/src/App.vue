@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref, watch } from "vue";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import PlayerStage from "./components/PlayerStage.vue";
+import TitleBar from "./components/TitleBar.vue";
 import PlaylistPanel from "./components/PlaylistPanel.vue";
 import SubtitlePanel from "./components/SubtitlePanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
@@ -463,7 +464,9 @@ onUnmounted(() => {
 
 <template>
   <div class="app-layout">
-    <PlayerStage
+    <TitleBar v-if="!stageFullscreen" />
+    <div class="app-body">
+      <PlayerStage
       ref="stageRef"
       :item="current"
       :items="items"
@@ -518,14 +521,22 @@ onUnmounted(() => {
       @close="settingsOpen = false"
       @set-theme="setTheme"
     />
+    </div>
   </div>
 </template>
 
 <style scoped>
 .app-layout {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   background: var(--bg-0);
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 </style>
 

@@ -30,3 +30,17 @@ models/
 # 本地工具二进制（ffmpeg 等，分发时另行打包）
 tools/
 *.exe
+
+# 个人化 / 工具过程产物（不影响软件运行）
+.claude/
+.workbuddy/
+icon-concepts/
+
+# tauri 图标：默认备份 + 未引用的过程图标（64x64 / 移动端）
+app/src-tauri/icons_backup_default/
+app/src-tauri/icons/64x64.png
+app/src-tauri/icons/android/
+app/src-tauri/icons/ios/
+
+# 过程设计文档（不进仓库）
+docs/superpowers/

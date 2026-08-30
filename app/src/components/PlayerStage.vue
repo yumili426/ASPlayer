@@ -387,7 +387,6 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
     @mousemove="onStageMouseMove"
   >
     <div class="stage-topbar" v-show="!isFullscreen">
-      <span class="stage-title">ASPlayer</span>
       <div class="toolbar">
         <button class="iconbtn" title="播放列表面板" @click="emit('togglePlaylist')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
         <button class="iconbtn" title="字幕面板" @click="emit('toggleSubtitle')" :class="{ active: captionOn }"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M11 10h6"/></svg></button>
@@ -566,17 +565,11 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
 .stage-topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding: 0 16px;
   min-height: 52px;
   background: var(--bg-1);
   border-bottom: 1px solid var(--line);
-}
-
-.stage-title {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
 }
 
 .toolbar {

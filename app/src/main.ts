@@ -28,8 +28,7 @@ if (params.get("window") === "overlay") {
   document.body.style.background = "transparent";
   createApp(FloatingOverlay).mount("#app");
 } else {
-  // 主窗口：让原生标题栏跟随应用主题。手动 light/dark 时固定该主题（避免系统浅色
-  // 主题下启动瞬间的白色顶栏）；system 时传 null 让原生窗口跟随系统。
+  // 主窗口：同步窗口主题（影响闪屏/加载底色；标题栏已自绘，由 tokens.css 主题变量渲染）。
   // App.vue 的 applyTheme() 负责后续跟随切换。
   getCurrentWindow().setTheme(saved === "light" || saved === "dark" ? resolved : null).catch(() => {});
   createApp(App).mount("#app");

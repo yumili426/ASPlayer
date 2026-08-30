@@ -23,6 +23,10 @@
   --accent: #0a84ff;
   --accent-dim: rgba(10, 132, 255, 0.14);
 
+  /* 危险色：关闭按钮 hover（Win 惯例红） */
+  --danger: #e81123;
+  --danger-fg: #ffffff;
+
   /* 边框与分割 */
   --line: rgba(255, 255, 255, 0.08);
 

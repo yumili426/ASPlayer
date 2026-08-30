@@ -3,4 +3,4 @@ resolver = "2"
 members = ["crates/asplayer-transcribe", "crates/asplayer-dict", "app/src-tauri"]
 
 [profile.release]
-lto = true
+lto = "thin"
