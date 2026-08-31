@@ -117,7 +117,7 @@ function stageLabel() {
       </div>
     </div>
 
-    <!-- 实时转写/翻译进度 -->
+    <!-- 实时转写/翻译进度（横幅，置于列表上方） -->
     <div v-if="status === 'transcribing' || status === 'translating'" class="sp-progress">
       <div class="sp-progress-label">
         <span>{{ stageLabel() }}</span>
@@ -132,19 +132,13 @@ function stageLabel() {
     </div>
 
     <!-- 错误 -->
-    <div v-else-if="status === 'error'" class="sp-empty">
+    <div v-if="status === 'error'" class="sp-empty">
       <p>字幕生成失败</p>
       <p v-if="message" class="sp-empty-sub">{{ message }}</p>
       <p v-else class="sp-empty-sub">请检查模型 / API 配置后重试</p>
     </div>
 
-    <!-- 无字幕 -->
-    <div v-else-if="subtitles.length === 0" class="sp-empty">
-      <p>暂无字幕</p>
-      <p class="sp-empty-sub">点击工具栏「转写」生成双语字幕</p>
-    </div>
-
-    <!-- 字幕列表 -->
+    <!-- 字幕列表（转写中也会逐句累积显示；空态文案按状态区分） -->
     <div v-else class="sp-list-wrap">
       <div class="sp-search">
         <svg class="sp-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -155,8 +149,9 @@ function stageLabel() {
       </div>
 
       <div v-if="filtered.length === 0" class="sp-empty">
-        <p>无匹配「{{ query.trim() }}」</p>
-        <p class="sp-empty-sub">换个关键词试试</p>
+        <p v-if="hasQuery">无匹配「{{ query.trim() }}」</p>
+        <p v-else>{{ status === 'transcribing' ? '正在转写…' : status === 'translating' ? '正在翻译…' : '暂无字幕' }}</p>
+        <p v-if="status === 'none'" class="sp-empty-sub">点击工具栏「转写」生成双语字幕</p>
       </div>
       <div v-else class="sp-scroll">
         <div

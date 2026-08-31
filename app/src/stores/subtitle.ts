@@ -39,6 +39,23 @@ function reset() {
   message.value = "";
 }
 
+function appendSubtitles(mediaId: number, rows: Subtitle[]) {
+  if (mediaId !== currentId.value) return;
+  const seen = new Set(subtitles.value.map((s) => s.start_ms));
+  const merged = [...subtitles.value];
+  for (const r of rows) {
+    if (seen.has(r.start_ms)) continue;
+    seen.add(r.start_ms);
+    merged.push(r);
+  }
+  merged.sort((a, b) => a.start_ms - b.start_ms);
+  subtitles.value = merged;
+}
+
+function clearSubtitles() {
+  subtitles.value = [];
+}
+
 function setStatus(s: string, st = "", p = 0, msg = "") {
   status.value = s;
   stage.value = st;
@@ -61,6 +78,8 @@ export function useSubtitle() {
     currentId,
     load,
     reset,
+    appendSubtitles,
+    clearSubtitles,
     setStatus,
     setTime,
     requestAutoTranslate,

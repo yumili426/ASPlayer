@@ -46,17 +46,12 @@ const capVars = computed(() => ({
 
 <template>
   <div class="caption" :class="`pos-${cap.captionStyle.position}`" :style="capVars">
-    <div v-if="status === 'transcribing' || status === 'translating'" class="caption-pending">
-      <span class="spinner"></span>
-      <span>{{ status === "translating" ? "正在翻译字幕…" : "正在转写字幕…" }}</span>
-    </div>
-
-    <div v-else-if="status === 'error'" class="caption-empty">
+    <div v-if="status === 'error'" class="caption-empty">
       <p>字幕生成失败</p>
       <p class="sub">请检查模型/API 配置后重试</p>
     </div>
 
-    <div v-else-if="subtitles.length === 0 && !dismissed" class="caption-empty">
+    <div v-else-if="subtitles.length === 0 && !dismissed && status !== 'transcribing' && status !== 'translating'" class="caption-empty">
       <p>暂无字幕</p>
       <p class="sub">可点击「转写」生成字幕</p>
       <button class="caption-dismiss" title="关闭提示" @click.stop="dismissed = true">×</button>
@@ -205,29 +200,4 @@ const capVars = computed(() => ({
   color: var(--fg-1);
 }
 
-.caption-pending {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--fg-2);
-  font-size: 14px;
-  background: rgba(0, 0, 0, 0.5);
-  padding: 8px 16px;
-  border-radius: 10px;
-}
-
-.spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--fg-3);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 </style>

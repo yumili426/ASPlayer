@@ -26,6 +26,7 @@ import {
   onTranscribeDone,
   onTranscribeError,
   onTranscribeCanceled,
+  onTranscribeSegments,
   cancelTranscribe,
   translateMedia,
   getSubtitleStatus,
@@ -455,7 +456,10 @@ onMounted(async () => {
     if (sub.currentId.value === mediaId) sub.load(mediaId);
     refresh().catch(() => {});
   });
-  unlisteners.push(u1, u2, u3, u4);
+  const uSeg = await onTranscribeSegments(({ mediaId, rows }) => {
+    sub.appendSubtitles(mediaId, rows);
+  });
+  unlisteners.push(u1, u2, u3, u4, uSeg);
   // M3 悬浮窗事件接线（全部走后端中继）
   const u5 = await listen<boolean>("overlay://visibility", (e) => {
     overlayVisible.value = !!e.payload;

@@ -19,6 +19,40 @@ pub struct SubtitleRow {
     pub ordinal: i64,
 }
 
+/// 把单块 whisper 返回的段映射为字幕行：绝对时间偏移 + 递增 ordinal + 空译文。
+fn rows_for_chunk(
+    segs: &[asplayer_transcribe::srt::Segment],
+    chunk_start_ms: i64,
+) -> Vec<SubtitleRow> {
+    segs.iter()
+        .enumerate()
+        .map(|(i, s)| SubtitleRow {
+            start_ms: s.start_ms as i64 + chunk_start_ms,
+            end_ms: s.end_ms as i64 + chunk_start_ms,
+            text: s.text.clone(),
+            translation: String::new(),
+            ordinal: i as i64,
+        })
+        .collect()
+}
+
+/// whisper 对「无语音/纯音乐/音效」段会输出占位文本（如 [BLANK_AUDIO]/[MUSIC]/(music)/♪）。
+/// 这类行不是真实对白，写库与 emit 前应丢弃，避免污染字幕列表。
+fn is_noise_text(text: &str) -> bool {
+    let t = text.trim();
+    if t.is_empty() {
+        return true;
+    }
+    if matches!(
+        t.to_lowercase().as_str(),
+        "[blank_audio]" | "[music]" | "(music)"
+    ) {
+        return true;
+    }
+    // 纯音符/空白（如 "♪ ♪"）
+    t.chars().all(|c| c == '♪' || c == ' ')
+}
+
 /// 转写进度事件负载
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,10 +63,19 @@ struct ProgressPayload {
     message: String,
 }
 
+/// 转写块事件负载：mediaId(外层 camelCase) + 该块新增字幕行(行内保持 snake_case，与 get_subtitles 一致)。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SegmentsPayload {
+    media_id: i64,
+    rows: Vec<SubtitleRow>,
+}
+
 const EVENT_PROGRESS: &str = "transcribe://progress";
 const EVENT_DONE: &str = "transcribe://done";
 const EVENT_ERROR: &str = "transcribe://error";
 const EVENT_CANCELED: &str = "transcribe://canceled";
+const EVENT_SEGMENTS: &str = "transcribe://segments";
 
 /// 正在运行的转写任务集合（media_id）。
 /// 1) 防止同一媒体并发触发多个转写任务；
@@ -242,6 +285,8 @@ fn transcribe_inner(
             Ok(s) => s,
             Err(e) => return Err(fail(db, media_id, format!("转写失败: {e}"))),
         };
+        // 丢弃无语音/纯音乐段的占位文本（[BLANK_AUDIO] 等），不写库、不进入流式列表
+        let segs: Vec<_> = segs.into_iter().filter(|s| !is_noise_text(&s.text)).collect();
 
         // 时间戳偏移（块内相对 → 绝对毫秒）+ 锁内幂等回写 + 断点推进
         let _ = with_db(db, |d| {
@@ -259,6 +304,10 @@ fn transcribe_inner(
             Ok(())
         })
         .map_err(|e| fail(db, media_id, format!("回写字幕失败: {e}")))?;
+
+        // 构建该块字幕行并推送实时事件（写库已成功，音轨时间已换算为绝对毫秒）
+        let rows = rows_for_chunk(&segs, c.start_ms);
+        let _ = app.emit(EVENT_SEGMENTS, SegmentsPayload { media_id, rows });
 
         let prog = 15 + 65 * (idx + 1) as u64 / total as u64;
         emit_progress(app, media_id, "transcribe", prog as u8, &format!("转写 {}/{} 块", idx + 1, total));
@@ -408,6 +457,8 @@ pub fn run_translation(app: AppHandle, db: Arc<Mutex<MediaDb>>, media_id: i64) {
 #[cfg(test)]
 mod tests {
     use super::is_local_base;
+    use super::is_noise_text;
+    use super::rows_for_chunk;
 
     #[test]
     fn local_bases_allow_empty_key() {
@@ -423,6 +474,41 @@ mod tests {
         assert!(!is_local_base("https://api.openai.com/v1"));
         assert!(!is_local_base("http://192.168.1.5:11434/v1"));
         assert!(!is_local_base(""));
+    }
+
+    #[test]
+    fn rows_for_chunk_offsets_and_ordinals() {
+        use asplayer_transcribe::srt::Segment;
+        let segs = vec![
+            Segment { start_ms: 0, end_ms: 500, text: "a".into() },
+            Segment { start_ms: 600, end_ms: 1200, text: "b".into() },
+        ];
+        let rows = rows_for_chunk(&segs, 3000);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].start_ms, 3000);
+        assert_eq!(rows[0].end_ms, 3500);
+        assert_eq!(rows[0].text, "a");
+        assert_eq!(rows[0].translation, "");
+        assert_eq!(rows[0].ordinal, 0);
+        assert_eq!(rows[1].start_ms, 3600);
+        assert_eq!(rows[1].end_ms, 4200);
+        assert_eq!(rows[1].ordinal, 1);
+    }
+
+    #[test]
+    fn is_noise_text_flags_placeholders() {
+        assert!(is_noise_text("[BLANK_AUDIO]"));
+        assert!(is_noise_text("  [blank_audio]  "));
+        assert!(is_noise_text("[MUSIC]"));
+        assert!(is_noise_text("(music)"));
+        assert!(is_noise_text("♪"));
+        assert!(is_noise_text("♪ ♪"));
+        assert!(is_noise_text("   "));
+
+        // 真实对白/音效标注应保留
+        assert!(!is_noise_text("I knew you were still awake."));
+        assert!(!is_noise_text("(sighs)"));
+        assert!(!is_noise_text("♪-adjacent words are content"));
     }
 }
 

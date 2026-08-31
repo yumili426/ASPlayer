@@ -53,6 +53,14 @@ export function onTranscribeProgress(
   return listen<ProgressEvent>("transcribe://progress", (ev) => cb(ev.payload));
 }
 
+export function onTranscribeSegments(
+  cb: (payload: { mediaId: number; rows: Subtitle[] }) => void
+): Promise<UnlistenFn> {
+  return listen<{ mediaId: number; rows: Subtitle[] }>("transcribe://segments", (ev) =>
+    cb(ev.payload)
+  );
+}
+
 export function onTranscribeDone(cb: (mediaId: number) => void): Promise<UnlistenFn> {
   return listen<number>("transcribe://done", (ev) => cb(ev.payload));
 }

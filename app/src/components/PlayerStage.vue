@@ -178,6 +178,7 @@ watch(() => pb.playback.intensiveBlindListen, () => {
 
 async function doTranscribe(withTranslate: boolean, resume = false) {
   if (!props.item || transcribing.value) return;
+  if (!resume) sub.clearSubtitles(); // 全新转写：先清空已累积，避免新旧混合
   sub.setStatus("transcribing", "transcribe", 0, resume ? "从断点继续转写…" : "正在转写…");
   if (withTranslate) sub.requestAutoTranslate(props.item.id);
   try {
