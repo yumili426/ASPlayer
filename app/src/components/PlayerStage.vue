@@ -3,11 +3,16 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import CaptionPanel from "./CaptionPanel.vue";
-import type { MediaItem } from "../types";
+import type { MediaItem, Subtitle } from "../types";
 import { useSubtitle } from "../stores/subtitle";
 import { usePlayback } from "../stores/playback";
 import { attachMedia as attachOverlayMedia } from "../overlayFeed";
 import { cancelTranscribe, transcribeMedia, translateMedia } from "../api/subtitle";
+import {
+  resolveMode, type PlaybackMode,
+  EMPTY_AB, abActive, abRange, abContains, abStep, type AbState,
+  shouldAutoPause, shouldSentenceLoop, type IntensiveFlags,
+} from "../lib/intensive";
 
 const sub = useSubtitle();
 const pb = usePlayback();
@@ -84,6 +89,14 @@ onBeforeUnmount(() => document.removeEventListener("click", onRateDocClick));
 onBeforeUnmount(() => {
   if (controlsHideTimer !== null) window.clearTimeout(controlsHideTimer);
 });
+onMounted(() => {
+  window.addEventListener("keydown", onBlindKeyDown);
+  window.addEventListener("keyup", onBlindKeyUp);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onBlindKeyDown);
+  window.removeEventListener("keyup", onBlindKeyUp);
+});
 watch(
   () => props.item?.id,
   (id) => {
@@ -94,6 +107,10 @@ watch(
     } else {
       sub.reset();
     }
+    sentEnd.value = null;
+    ab.value = EMPTY_AB;
+    blindReveal.value = false;
+    lastActiveIdx = -1;
   }
 );
 
@@ -129,6 +146,35 @@ watch(mediaEl, (el) => {
 });
 
 const transcribing = computed(() => sub.status.value === "transcribing");
+
+// ---- 精听模式：有效模式 / 三开关 / hasSubtitle ----
+const effectiveMode = computed<PlaybackMode>(() =>
+  resolveMode(props.item?.profile_override ?? null, pb.playback.playbackMode)
+);
+const intensiveFlags = computed<IntensiveFlags>(() => ({
+  autoPause: pb.playback.intensiveAutoPause,
+  sentenceLoop: pb.playback.intensiveSentenceLoop,
+}));
+const hasSubtitle = computed(() => sub.subtitles.value.length > 0);
+
+// 句末暂停锚点（含所属字幕，供句末按钮与字幕显示覆盖用）
+const sentEnd = ref<{ sub: Subtitle } | null>(null);
+// AB 循环状态（秒）
+const ab = ref<AbState>(EMPTY_AB);
+const abRangeC = computed(() => abRange(ab.value));
+// 盲听「揭示暂停译文」瞬时态
+const blindReveal = ref(false);
+
+// 最近一次处于其中的字幕序号（跨越 `时间update` 判定句末用）
+let lastActiveIdx = -1;
+
+// 切模式清句末暂停/揭示；盲听开关关闭时清瞬时揭示态
+watch(effectiveMode, () => {
+  sentEnd.value = null;
+});
+watch(() => pb.playback.intensiveBlindListen, () => {
+  blindReveal.value = false;
+});
 
 async function doTranscribe(withTranslate: boolean, resume = false) {
   if (!props.item || transcribing.value) return;
@@ -167,27 +213,110 @@ function doImportSubtitle() {
 function togglePlay() {
   const el = mediaEl.value;
   if (!el) return;
+  if (sentEnd.value) {
+    nextSentence();
+    return;
+  }
+  if (
+    playing.value && hasSubtitle.value &&
+    shouldSentenceLoop(effectiveMode.value, intensiveFlags.value, abActive(ab.value), true)
+  ) {
+    const tMs = el.currentTime * 1000;
+    const nxt = sub.subtitles.value.find((s) => s.start_ms > tMs);
+    if (nxt) {
+      el.currentTime = nxt.start_ms / 1000;
+      return;
+    }
+    // 落在最后一句且无下一句：回落到常规切换播放，避免按钮变死键
+  }
   if (el.paused) el.play();
   else el.pause();
+}
+
+/** 句末暂停后「下一句」 */
+function nextSentence() {
+  const el = mediaEl.value;
+  if (!el || !sentEnd.value) return;
+  const fromEnd = sentEnd.value.sub.end_ms;
+  sentEnd.value = null;
+  const nxt = sub.subtitles.value.find((s) => s.start_ms >= fromEnd);
+  if (nxt) {
+    el.currentTime = nxt.start_ms / 1000;
+    el.play();
+  }
+}
+
+/** 句末暂停后「重听本句」 */
+function replaySentence() {
+  const el = mediaEl.value;
+  if (!el || !sentEnd.value) return;
+  const start = sentEnd.value.sub.start_ms;
+  sentEnd.value = null;
+  el.currentTime = start / 1000;
+  el.play();
+}
+
+/** 重听当前句（R 键 / repeatSubtitle） */
+function repeatSubtitle() {
+  const el = mediaEl.value;
+  if (!el) return;
+  if (sentEnd.value) {
+    replaySentence();
+    return;
+  }
+  const tMs = el.currentTime * 1000;
+  const act = sub.subtitles.value.find((s) => tMs >= s.start_ms && tMs < s.end_ms);
+  if (act) el.currentTime = act.start_ms / 1000;
+}
+
+/** 切模式/拖动进度条等外部清态入口 */
+function clearIntensiveState() {
+  sentEnd.value = null;
+}
+
+function onAB() {
+  ab.value = abStep(ab.value, sub.currentTime.value);
+}
+function abText() {
+  if (ab.value.a === null) return "AB";
+  if (ab.value.b === null) return "A·";
+  return "A↔B";
+}
+function abMarkClass() {
+  if (ab.value.a === null) return "none";
+  if (ab.value.b === null) return "pending";
+  return "on";
+}
+function abLeftPct(t: number): string {
+  const d = duration.value || 0;
+  return d ? `${Math.min(100, Math.max(0, (t / d) * 100))}%` : "0%";
+}
+
+/** 统一手动 seek 入口：清句末锚；目标不在 AB 区间则清 AB；并 clamp 到 [0, duration] */
+function applySeek(t: number) {
+  const el = mediaEl.value;
+  if (!el) return;
+  const target = Math.max(0, Math.min(el.duration || 0, t));
+  if (abActive(ab.value) && !abContains(ab.value, target)) ab.value = EMPTY_AB;
+  sentEnd.value = null;
+  el.currentTime = target;
 }
 
 function seekBy(delta: number) {
   const el = mediaEl.value;
   if (!el) return;
-  el.currentTime = Math.max(0, Math.min(el.duration || 0, el.currentTime + delta));
+  applySeek(el.currentTime + delta);
 }
 
 function seekToSeconds(seconds: number) {
   // 绝对时间跳转（悬浮窗点击句子 / 全局上一句下一句用）
-  const el = mediaEl.value;
-  if (!el) return;
-  el.currentTime = Math.max(0, Math.min(el.duration || 0, seconds));
+  applySeek(seconds);
 }
 
 function onSeekInput(e: Event) {
   const el = mediaEl.value;
   if (!el) return;
-  el.currentTime = Number((e.target as HTMLInputElement).value);
+  applySeek(Number((e.target as HTMLInputElement).value));
 }
 
 function next() {
@@ -374,9 +503,57 @@ function onTimeUpdate() {
       )
       .catch(() => {});
   }
+
+  const tMs = el.currentTime * 1000;
+  const idx = sub.subtitles.value.findIndex((s) => tMs >= s.start_ms && tMs < s.end_ms);
+
+  // AB 循环：越出右边界即跳回左边界（优先级最高）；等长区间（a===b）不跳以免死循环
+  if (playing.value && abActive(ab.value) && abRangeC.value) {
+    const [lo, hi] = abRangeC.value;
+    if (lo !== hi && el.currentTime >= hi) {
+      el.currentTime = lo;
+      return;
+    }
+  }
+
+  // 单句循环：回到本句起点（用 departure 侧 lastActiveIdx 作锚，兼容连续字幕）
+  if (
+    playing.value && hasSubtitle.value &&
+    shouldSentenceLoop(effectiveMode.value, intensiveFlags.value, abActive(ab.value), hasSubtitle.value)
+  ) {
+    const loopAnchor = lastActiveIdx !== -1 ? sub.subtitles.value[lastActiveIdx] : (idx !== -1 ? sub.subtitles.value[idx] : null);
+    if (loopAnchor && tMs >= loopAnchor.end_ms) {
+      el.currentTime = loopAnchor.start_ms / 1000;
+      return;
+    }
+  }
+
+  // 自动暂停：跨越句末时精确停在该句末
+  if (
+    playing.value && !sentEnd.value &&
+    shouldAutoPause(effectiveMode.value, intensiveFlags.value, abActive(ab.value), hasSubtitle.value)
+  ) {
+    const prevAnchor = lastActiveIdx !== -1 ? sub.subtitles.value[lastActiveIdx] : null;
+    if (prevAnchor && tMs >= prevAnchor.end_ms && idx !== lastActiveIdx) {
+      el.currentTime = prevAnchor.end_ms / 1000;
+      el.pause();
+      sentEnd.value = { sub: prevAnchor };
+    }
+  }
+
+  if (idx !== -1) lastActiveIdx = idx;
 }
 
-defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjustVolume, toggleFullscreen });
+// 盲听：按住 H 揭示暂停译文
+function onBlindKeyDown(e: KeyboardEvent) {
+  if (e.repeat) return;
+  if (e.code === "KeyH" && pb.playback.intensiveBlindListen) blindReveal.value = true;
+}
+function onBlindKeyUp(e: KeyboardEvent) {
+  if (e.code === "KeyH") blindReveal.value = false;
+}
+
+defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjustVolume, toggleFullscreen, repeatSubtitle, clearIntensiveState });
 </script>
 
 
@@ -406,6 +583,12 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
         :subtitles="sub.subtitles.value"
         :current-time="sub.currentTime.value"
         :status="sub.status.value"
+        :override="sentEnd ? sentEnd.sub : null"
+        :show-end-actions="!!sentEnd"
+        :blind="pb.playback.intensiveBlindListen && effectiveMode === 'intensive'"
+        :reveal="blindReveal"
+        @replay="replaySentence"
+        @next="nextSentence"
         @click.stop
       />
       <div v-if="!item" class="empty">
@@ -465,7 +648,13 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
       >
       <div class="seek-row">
         <span class="time">{{ fmt(sub.currentTime.value) }}</span>
-        <input class="slider" type="range" min="0" :max="duration || 0" step="0.1" :value="sub.currentTime.value" :disabled="!item" @input="onSeekInput" />
+        <div class="seek-wrap">
+          <input class="slider" type="range" min="0" :max="duration || 0" step="0.1" :value="sub.currentTime.value" :disabled="!item" @input="onSeekInput" />
+          <div class="ab-marks">
+            <span v-if="ab.a != null" class="ab-mark" :style="{ left: abLeftPct(ab.a) }">A</span>
+            <span v-if="ab.b != null" class="ab-mark" :style="{ left: abLeftPct(ab.b) }">B</span>
+          </div>
+        </div>
         <span class="time">{{ fmt(duration) }}</span>
       </div>
       <div class="btn-row">
@@ -503,6 +692,11 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
                 <svg v-if="pb.playback.loopMode === 'single'" fill="none" viewBox="0 0 24 24" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>
                 <svg v-else fill="none" viewBox="0 0 24 24" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
               </button>
+              <div class="btn-group mode-group">
+                <button class="ctl mode-seg" :class="{ 'cur': effectiveMode === 'broadcast' }" title="连播模式（点击=设为全局）" :disabled="!item" @click="pb.playback.playbackMode = 'broadcast'">连播</button>
+                <button class="ctl mode-seg" :class="{ 'cur': effectiveMode === 'intensive' }" title="精听模式（点击=设为全局）" :disabled="!item" @click="pb.playback.playbackMode = 'intensive'">精听</button>
+              </div>
+              <button class="ctl ab-btn" :class="'ab-' + abMarkClass()" :disabled="!item" :title="abText()" @click="onAB">{{ abText() }}</button>
               <button class="ctl overlay-toggle" :class="{ active: props.overlayOn }" title="迷你悬浮字幕窗（Ctrl+Alt+O 显隐 · Ctrl+Alt+L 穿透锁定）" @click="emit('overlayToggle')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5"/><rect x="13" y="13" width="8" height="6" rx="1"/></svg></button>
             </div>
         <div class="btn-group">
@@ -1099,6 +1293,59 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
 .rate-pop-leave-to {
   opacity: 0;
   transform: translateY(6px);
+}
+
+.seek-wrap {
+  position: relative;
+  flex: 1;
+}
+.seek-wrap .slider {
+  width: 100%;
+  display: block;
+}
+.ab-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ab-mark {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+  background: var(--bg-1);
+  border-radius: 4px;
+  padding: 1px 3px;
+  z-index: 5;
+}
+.mode-group {
+  gap: 2px;
+}
+.ctl.mode-seg {
+  width: auto;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-3);
+}
+.ctl.mode-seg.cur {
+  color: var(--accent);
+}
+.ctl.ab-btn {
+  width: auto;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fg-3);
+}
+.ctl.ab-btn.ab-pending {
+  color: var(--fg-1);
+}
+.ctl.ab-btn.ab-on {
+  color: var(--accent);
 }
 
 </style>

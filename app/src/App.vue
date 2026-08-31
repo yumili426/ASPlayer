@@ -8,9 +8,11 @@ import SubtitlePanel from "./components/SubtitlePanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import DictCard from "./components/DictCard.vue";
 import type { MediaItem, DictLookup } from "./types";
+import type { ProfileOverride } from "./lib/intensive";
 import { dictDownload, dictLookup, onDictStatus } from "./api/dict";
 import { useSubtitle } from "./stores/subtitle";
 import { useShortcuts } from "./stores/shortcuts";
+import { usePlayback } from "./stores/playback";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -242,10 +244,22 @@ function play(item: MediaItem) {
   current.value = item;
 }
 
-// 字幕面板点击某行 → 跳转到对应时间
+async function onSetProfile(item: MediaItem, value: ProfileOverride) {
+  const { setMediaProfile } = await import("./api/playback");
+  try {
+    await setMediaProfile(item.id, value);
+    const hit = items.value.find((m) => m.id === item.id);
+    if (hit) hit.profile_override = value;
+    if (current.value?.id === item.id) current.value.profile_override = value;
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error("[ASPlayer] 设置播放模式失败:", e);
+  }
+}
+
+// 字幕面板点击某行 → 跳转到对应时间（路由到 PlayerStage 暴露的 seekToSeconds，统一清句末锚/越界 AB）
 function seekTo(t: number) {
-  const mediaEl = document.querySelector<HTMLMediaElement>(".canvas video, .canvas audio");
-  if (mediaEl) mediaEl.currentTime = t;
+  stageRef.value?.seekToSeconds(t);
 }
 
 // 快捷键：播放控制 / 面板开关 / 字幕跳转
@@ -257,6 +271,15 @@ function isEditableTarget(e: KeyboardEvent): boolean {
 }
 
 const sc = useShortcuts();
+const pb = usePlayback();
+
+function togglePlaybackMode() {
+  pb.playback.playbackMode = pb.playback.playbackMode === "intensive" ? "broadcast" : "intensive";
+}
+
+function toggleSentenceLoop() {
+  pb.playback.intensiveSentenceLoop = !pb.playback.intensiveSentenceLoop;
+}
 
 function seekToSubtitle(dir: 1 | -1) {
   const list = sub.subtitles.value;
@@ -322,6 +345,15 @@ function onKeydown(e: KeyboardEvent) {
       break;
     case "openSettings":
       settingsOpen.value = true;
+      break;
+    case "togglePlaybackMode":
+      togglePlaybackMode();
+      break;
+    case "repeatSubtitle":
+      stageRef.value?.repeatSubtitle();
+      break;
+    case "toggleSentenceLoop":
+      toggleSentenceLoop();
       break;
   }
 }
@@ -514,6 +546,7 @@ onUnmounted(() => {
       @refresh="refresh"
       @close="showPlaylist = false"
       @import-subtitle="(item) => onImportSubtitle(item.id)"
+      @set-profile="onSetProfile"
     />
     <SettingsPanel
       :open="settingsOpen"

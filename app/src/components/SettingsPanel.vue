@@ -493,6 +493,88 @@ function onClick(e: MouseEvent) {
         </div>
 
         <p class="hint">开启后，列表循环模式下播完当前集会连播下一集；关闭则播完即停（取消循环）。</p>
+
+        <div class="row">
+          <span class="row-label">播放模式</span>
+          <div class="segmented">
+            <button
+              class="segment"
+              :class="{ active: pb.playback.playbackMode === 'broadcast' }"
+              @click="pb.playback.playbackMode = 'broadcast'"
+            >
+              连播
+            </button>
+            <button
+              class="segment"
+              :class="{ active: pb.playback.playbackMode === 'intensive' }"
+              @click="pb.playback.playbackMode = 'intensive'"
+            >
+              精听
+            </button>
+          </div>
+        </div>
+        <p class="hint">精听：每句结束自动暂停、可单句循环、可盲听（隐藏译文）。仅在有字幕时生效。</p>
+
+        <div class="row">
+          <span class="row-label">精听 · 自动暂停每句</span>
+          <div class="segmented">
+            <button
+              class="segment"
+              :class="{ active: pb.playback.intensiveAutoPause }"
+              @click="pb.playback.intensiveAutoPause = true"
+            >
+              开
+            </button>
+            <button
+              class="segment"
+              :class="{ active: !pb.playback.intensiveAutoPause }"
+              @click="pb.playback.intensiveAutoPause = false"
+            >
+              关
+            </button>
+          </div>
+        </div>
+
+        <div class="row">
+          <span class="row-label">精听 · 单句循环</span>
+          <div class="segmented">
+            <button
+              class="segment"
+              :class="{ active: pb.playback.intensiveSentenceLoop }"
+              @click="pb.playback.intensiveSentenceLoop = true"
+            >
+              开
+            </button>
+            <button
+              class="segment"
+              :class="{ active: !pb.playback.intensiveSentenceLoop }"
+              @click="pb.playback.intensiveSentenceLoop = false"
+            >
+              关
+            </button>
+          </div>
+        </div>
+
+        <div class="row">
+          <span class="row-label">精听 · 盲听</span>
+          <div class="segmented">
+            <button
+              class="segment"
+              :class="{ active: pb.playback.intensiveBlindListen }"
+              @click="pb.playback.intensiveBlindListen = true"
+            >
+              开
+            </button>
+            <button
+              class="segment"
+              :class="{ active: !pb.playback.intensiveBlindListen }"
+              @click="pb.playback.intensiveBlindListen = false"
+            >
+              关
+            </button>
+          </div>
+        </div>
+        <p class="hint">盲听开启后字幕浮层隐藏译文（临时原文态）；按住 H 键可临时显示译文。</p>
       </div>
 
       <div class="section" v-show="activeTab === 'subtitle'">
@@ -863,8 +945,6 @@ function onClick(e: MouseEvent) {
 
         <p class="hint">已下载原始文件与生成的词典体积见上文；任一下载中时，其余语言会稍后再下（一次只下载一种）。</p>
       </div>
-
-      <div class="foot-hint">更多设置项将在后续里程碑加入（快捷键、字幕样式等）</div>
         </div>
       </div>
     </div>

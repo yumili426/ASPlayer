@@ -220,6 +220,13 @@ fn get_playback_params(id: i64, state: State<AppState>) -> CmdResult<(f64, f64)>
     db.get_playback_params(id).map_err(err_str)
 }
 
+/// 设置某媒体的精听/连播覆盖（None=跟随全局）。
+#[tauri::command]
+fn set_media_profile(id: i64, value: Option<String>, state: State<AppState>) -> CmdResult<()> {
+    let db = state.db.lock().map_err(err_str)?;
+    db.set_media_profile(id, value).map_err(err_str)
+}
+
 /// 读取某媒体的字幕
 #[tauri::command]
 fn get_subtitles(id: i64, state: State<AppState>) -> CmdResult<Vec<transcriber::SubtitleRow>> {
@@ -310,6 +317,7 @@ pub fn run() {
             cancel_transcribe,
             save_playback_params,
             get_playback_params,
+            set_media_profile,
             get_subtitles,
             get_subtitle_status,
             import_external_subtitle,

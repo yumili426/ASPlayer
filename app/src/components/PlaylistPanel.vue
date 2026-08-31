@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { MediaItem } from "../types";
+import type { ProfileOverride } from "../lib/intensive";
 
 const props = defineProps<{
   items: MediaItem[];
@@ -16,12 +17,14 @@ const emit = defineEmits<{
   refresh: [];
   close: [];
   importSubtitle: [item: MediaItem];
+  setProfile: [item: MediaItem, value: ProfileOverride];
 }>();
 
 const ctxMenu = ref<{ x: number; y: number; item: MediaItem } | null>(null);
 const confirmDelete = ref<MediaItem | null>(null);
 const hover = ref<{ x: number; y: number; item: MediaItem } | null>(null);
 const tipEl = ref<HTMLElement | null>(null);
+const profileSub = ref<{ item: MediaItem; x: number; y: number } | null>(null);
 
 async function onItemHover(e: MouseEvent, item: MediaItem) {
   const w = 232;
@@ -77,6 +80,24 @@ function onContextMenu(e: MouseEvent, item: MediaItem) {
 
 function closeCtx() {
   ctxMenu.value = null;
+  profileSub.value = null;
+}
+
+function openProfileSub(e: MouseEvent) {
+  const item = ctxMenu.value?.item;
+  if (!item) return;
+  const t = e.currentTarget as HTMLElement | null;
+  const rect = t ? t.getBoundingClientRect() : { right: e.clientX, top: e.clientY };
+  const x = Math.min(rect.right + 2, window.innerWidth - 180);
+  profileSub.value = { item, x, y: rect.top };
+}
+
+function setProfile(value: ProfileOverride) {
+  const item = profileSub.value?.item ?? ctxMenu.value?.item;
+  profileSub.value = null;
+  closeCtx();
+  if (!item) return;
+  emit("setProfile", item, value);
 }
 
 function playItem(item: MediaItem) {
@@ -245,6 +266,10 @@ function fmtDuration(ms: number): string {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5l12 7-12 7z"/></svg>
           播放
         </button>
+        <button class="pl-ctx-item sub" @mouseenter="openProfileSub" @click.stop>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          播放模式
+        </button>
         <button class="pl-ctx-item" @click="importSubtitle(ctxMenu!.item)">
           导入字幕
         </button>
@@ -260,6 +285,19 @@ function fmtDuration(ms: number): string {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
           删除文件
         </button>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="profileSub"
+        class="pl-ctx pl-ctx-sub"
+        :style="{ left: profileSub.x + 'px', top: profileSub.y + 'px' }"
+        @click.stop
+      >
+        <button class="pl-ctx-item" :class="{ cur: (profileSub.item.profile_override ?? null) === null }" @click="setProfile(null)">跟随全局</button>
+        <button class="pl-ctx-item" :class="{ cur: profileSub.item.profile_override === 'intensive' }" @click="setProfile('intensive')">精听</button>
+        <button class="pl-ctx-item" :class="{ cur: profileSub.item.profile_override === 'broadcast' }" @click="setProfile('broadcast')">连播</button>
       </div>
     </Teleport>
 
@@ -554,6 +592,14 @@ function fmtDuration(ms: number): string {
 
 .pl-ctx-item.danger:hover {
   background: rgba(255, 69, 58, 0.12);
+}
+
+.pl-ctx-sub {
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.36);
+}
+
+.pl-ctx-item.cur {
+  color: var(--accent);
 }
 
 .dlg-overlay {

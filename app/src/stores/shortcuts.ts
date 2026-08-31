@@ -19,6 +19,9 @@ export const shortcutActions: ShortcutMeta[] = [
   { name: "togglePlaylist", label: "切换播放列表" },
   { name: "toggleSubtitle", label: "切换字幕面板" },
   { name: "openSettings", label: "打开设置" },
+  { name: "togglePlaybackMode", label: "切换连播 / 精听" },
+  { name: "repeatSubtitle", label: "重听本句" },
+  { name: "toggleSentenceLoop", label: "单句循环开关" },
 ];
 
 const STORAGE_KEY = "asplayer-shortcuts-v1";
@@ -36,6 +39,9 @@ const defaults: ShortcutBinding[] = [
   { action: "togglePlaylist", keys: "Mod+KeyL" },
   { action: "toggleSubtitle", keys: "Mod+KeyT" },
   { action: "openSettings", keys: "Mod+Comma" },
+  { action: "togglePlaybackMode", keys: "Mod+Alt+KeyS" },
+  { action: "repeatSubtitle", keys: "KeyR" },
+  { action: "toggleSentenceLoop", keys: "Mod+Alt+KeyL" },
 ];
 
 function load(): ShortcutBinding[] {

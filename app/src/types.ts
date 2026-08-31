@@ -12,6 +12,7 @@ export interface MediaItem {
   transcribe_next_ms: number;
   speed: number;
   volume: number;
+  profile_override: "broadcast" | "intensive" | null;
 }
 
 export interface Subtitle {
@@ -67,7 +68,10 @@ export type ShortcutActionName =
   | "prevSubtitle"
   | "togglePlaylist"
   | "toggleSubtitle"
-  | "openSettings";
+  | "openSettings"
+  | "togglePlaybackMode"
+  | "repeatSubtitle"
+  | "toggleSentenceLoop";
 
 export interface ShortcutBinding {
   action: ShortcutActionName;

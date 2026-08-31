@@ -58,7 +58,8 @@ impl MediaDb {
         // 迁移已存在的旧库：为其补充 M2 新增的列（CREATE TABLE IF NOT EXISTS 不会改旧表）
         Self::migrate(conn)?;
         Self::migrate_playback_params(conn)?;
-        Self::migrate_transcribe(conn)
+        Self::migrate_transcribe(conn)?;
+        Self::migrate_intensive(conn)
     }
 
     /// 幂等迁移：给 media_files 补齐缺失的列（老版本数据库升级用）。
@@ -107,6 +108,18 @@ impl MediaDb {
         Ok(())
     }
 
+    /// 幂等迁移（v3）：加精听模式按文件覆盖列（NULL=跟随全局）。
+    pub fn migrate_intensive(conn: &Connection) -> rusqlite::Result<()> {
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(media_files)")?
+            .query_map([], |r| r.get(1))?
+            .collect::<Result<_, _>>()?;
+        if !cols.iter().any(|c| c == "profile_override") {
+            conn.execute_batch("ALTER TABLE media_files ADD COLUMN profile_override TEXT;")?;
+        }
+        Ok(())
+    }
+
     /// 按路径插入或更新，返回 id
     pub fn upsert_media(&self, path: &str, title: &str, media_type: &str, file_size: i64) -> rusqlite::Result<i64> {
         self.conn.execute(
@@ -123,7 +136,7 @@ impl MediaDb {
                     m.file_size, m.subtitle_status, m.subtitle_lang,
                     (SELECT COUNT(*) FROM subtitles s WHERE s.media_id = m.id),
                     COALESCE(m.speed, 1.0), COALESCE(m.volume, 1.0),
-                    m.transcribe_next_ms
+                    m.transcribe_next_ms, m.profile_override
              FROM media_files m ORDER BY m.added_at DESC, m.id DESC",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -141,6 +154,7 @@ impl MediaDb {
                 transcribe_next_ms: r.get(12)?,
                 speed: r.get(10)?,
                 volume: r.get(11)?,
+                profile_override: r.get(13)?,
             })
         })?;
         rows.collect()
@@ -168,6 +182,15 @@ impl MediaDb {
         self.conn.execute(
             "UPDATE media_files SET speed = ?1, volume = ?2 WHERE id = ?3",
             rusqlite::params![speed, volume, id],
+        )?;
+        Ok(())
+    }
+
+    /// 写回精听模式按文件覆盖（value=None=跟随全局）。
+    pub fn set_media_profile(&self, id: i64, value: Option<String>) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE media_files SET profile_override = ?1 WHERE id = ?2",
+            rusqlite::params![value, id],
         )?;
         Ok(())
     }
@@ -621,6 +644,30 @@ mod tests {
 
         // 幂等：再跑一次不报错
         MediaDb::migrate(&conn)?;
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_intensive_adds_profile_override() -> rusqlite::Result<()> {
+        let db = MediaDb::open_in_memory()?;
+        let cols: Vec<String> = db.conn
+            .prepare("PRAGMA table_info(media_files)")?
+            .query_map([], |r| r.get(1))?
+            .collect::<Result<_, _>>()?;
+        assert!(cols.iter().any(|c| c == "profile_override"));
+        Ok(())
+    }
+
+    #[test]
+    fn set_media_profile_round_trips() -> rusqlite::Result<()> {
+        let db = MediaDb::open_in_memory()?;
+        let id = db.upsert_media("D:/m/a.mp4", "a", "video", 0)?;
+        db.set_media_profile(id, Some("intensive".into()))?;
+        let rows = db.list_media()?;
+        assert_eq!(rows[0].profile_override.as_deref(), Some("intensive"));
+        db.set_media_profile(id, None)?;
+        let rows = db.list_media()?;
+        assert_eq!(rows[0].profile_override, None);
         Ok(())
     }
 }

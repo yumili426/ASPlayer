@@ -3,11 +3,19 @@ import { reactive, watch } from "vue";
 export interface PlaybackSettings {
   autoplayNext: boolean; // 列表循环模式下播完自动连播下一集
   loopMode: "list" | "single"; // 循环模式：列表循环 / 单曲循环
+  playbackMode: "broadcast" | "intensive"; // 全局播放模式（精听/连播）
+  intensiveAutoPause: boolean; // 精听：每句结束自动暂停（默认开）
+  intensiveSentenceLoop: boolean; // 精听：单句循环（默认关）
+  intensiveBlindListen: boolean; // 精听：盲听（隐藏译文，默认关）
 }
 
 export const defaultPlayback: PlaybackSettings = {
   autoplayNext: true,
   loopMode: "list",
+  playbackMode: "broadcast",
+  intensiveAutoPause: true,
+  intensiveSentenceLoop: false,
+  intensiveBlindListen: false,
 };
 
 const STORAGE_KEY = "asplayer-playback-v1";

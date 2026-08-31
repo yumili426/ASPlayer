@@ -7,7 +7,12 @@ const props = defineProps<{
   subtitles: Subtitle[];
   currentTime: number; // 秒
   status: string;
+  override?: Subtitle | null; // 句末暂停时显示的句子（覆盖当前活动句）
+  showEndActions?: boolean;
+  blind?: boolean; // 盲听中（隐藏译文）
+  reveal?: boolean; // 按住揭示译文
 }>();
+const emit = defineEmits<{ replay: []; next: [] }>();
 
 const current = computed<Subtitle | null>(() => {
   const ms = props.currentTime * 1000;
@@ -16,6 +21,13 @@ const current = computed<Subtitle | null>(() => {
 
 const cap = useCaptionStyle();
 const mode = computed(() => cap.captionStyle.mode);
+// 句末暂停显示覆盖句；否则跟随当前播放句
+const line = computed<Subtitle | null>(() => props.override ?? current.value);
+// 盲听按 H 揭示：临时切回原文态隐藏译文
+const effMode = computed(() => {
+  if (props.blind && !props.reveal) return "original" as const;
+  return mode.value;
+});
 
 // “暂无字幕”空态可手动关闭；一旦出现字幕或进入转写/翻译/出错状态则重新展示
 const dismissed = ref(false);
@@ -51,12 +63,16 @@ const capVars = computed(() => ({
     </div>
 
     <template v-else>
-      <p v-if="current" class="caption-line">
-        <span v-if="mode !== 'translation'" class="original">{{ current.text }}</span>
-        <span v-if="mode === 'bilingual' && current.translation" class="translated">{{ current.translation }}</span>
-        <span v-if="mode === 'translation'" class="original">{{ current.translation || current.text }}</span>
+      <p v-if="line" class="caption-line">
+        <span v-if="effMode !== 'translation'" class="original">{{ line.text }}</span>
+        <span v-if="effMode === 'bilingual' && line.translation" class="translated">{{ line.translation }}</span>
+        <span v-if="effMode === 'translation'" class="original">{{ line.translation || line.text }}</span>
       </p>
       <p v-else class="caption-idle">…</p>
+      <div v-if="showEndActions" class="caption-actions">
+        <button class="ca-btn" @click.stop="emit('replay')">↺ 重听本句</button>
+        <button class="ca-btn" @click.stop="emit('next')">→ 下一句</button>
+      </div>
     </template>
   </div>
 </template>
@@ -119,6 +135,30 @@ const capVars = computed(() => ({
 .caption-idle {
   color: rgba(255, 255, 255, 0.35);
   font-size: 18px;
+}
+
+.caption-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  pointer-events: auto;
+  justify-content: center;
+}
+
+.ca-btn {
+  pointer-events: auto;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-1);
+  color: var(--fg-1);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s ease, filter 0.12s ease;
+}
+
+.ca-btn:hover {
+  background: var(--bg-2);
 }
 
 .caption-empty {
