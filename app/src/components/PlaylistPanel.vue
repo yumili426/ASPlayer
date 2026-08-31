@@ -25,6 +25,22 @@ const confirmDelete = ref<MediaItem | null>(null);
 const hover = ref<{ x: number; y: number; item: MediaItem } | null>(null);
 const tipEl = ref<HTMLElement | null>(null);
 const profileSub = ref<{ item: MediaItem; x: number; y: number } | null>(null);
+const profileCloseTimer = ref<number | null>(null);
+
+function clearProfileCloseTimer() {
+  if (profileCloseTimer.value !== null) {
+    window.clearTimeout(profileCloseTimer.value);
+    profileCloseTimer.value = null;
+  }
+}
+
+function scheduleCloseProfileSub() {
+  clearProfileCloseTimer();
+  profileCloseTimer.value = window.setTimeout(() => {
+    profileSub.value = null;
+    profileCloseTimer.value = null;
+  }, 160);
+}
 
 async function onItemHover(e: MouseEvent, item: MediaItem) {
   const w = 232;
@@ -76,14 +92,18 @@ function onContextMenu(e: MouseEvent, item: MediaItem) {
   const x = Math.min(e.clientX, window.innerWidth - w - 8);
   const y = Math.min(e.clientY, window.innerHeight - h - 8);
   ctxMenu.value = { x, y, item };
+  profileSub.value = null;
+  clearProfileCloseTimer();
 }
 
 function closeCtx() {
+  clearProfileCloseTimer();
   ctxMenu.value = null;
   profileSub.value = null;
 }
 
 function openProfileSub(e: MouseEvent) {
+  clearProfileCloseTimer();
   const item = ctxMenu.value?.item;
   if (!item) return;
   const t = e.currentTarget as HTMLElement | null;
@@ -153,7 +173,10 @@ async function doDelete() {
 }
 
 onMounted(() => window.addEventListener("click", closeCtx));
-onBeforeUnmount(() => window.removeEventListener("click", closeCtx));
+onBeforeUnmount(() => {
+  window.removeEventListener("click", closeCtx);
+  clearProfileCloseTimer();
+});
 
 const search = ref("");
 const sortBy = ref<"added" | "title" | "duration" | "subtitle">("added");
@@ -266,11 +289,12 @@ function fmtDuration(ms: number): string {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5l12 7-12 7z"/></svg>
           播放
         </button>
-        <button class="pl-ctx-item sub" @mouseenter="openProfileSub" @click.stop>
+        <button class="pl-ctx-item sub" @mouseenter="openProfileSub" @mouseleave="scheduleCloseProfileSub" @click.stop>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           播放模式
         </button>
         <button class="pl-ctx-item" @click="importSubtitle(ctxMenu!.item)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h6M7 13.5h9"/></svg>
           导入字幕
         </button>
         <button class="pl-ctx-item" @click="revealInFolder(ctxMenu!.item)">
@@ -293,6 +317,8 @@ function fmtDuration(ms: number): string {
         v-if="profileSub"
         class="pl-ctx pl-ctx-sub"
         :style="{ left: profileSub.x + 'px', top: profileSub.y + 'px' }"
+        @mouseenter="clearProfileCloseTimer"
+        @mouseleave="scheduleCloseProfileSub"
         @click.stop
       >
         <button class="pl-ctx-item" :class="{ cur: (profileSub.item.profile_override ?? null) === null }" @click="setProfile(null)">跟随全局</button>
