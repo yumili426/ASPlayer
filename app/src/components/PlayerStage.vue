@@ -13,6 +13,7 @@ import {
   EMPTY_AB, abActive, abRange, abContains, abStep, type AbState,
   shouldAutoPause, shouldSentenceLoop, type IntensiveFlags,
 } from "../lib/intensive";
+import { SCALE_MODES, scaleObjectFit, type VideoScale } from "../lib/videoScale";
 
 const sub = useSubtitle();
 const pb = usePlayback();
@@ -56,6 +57,34 @@ const rateMenuEl = ref<HTMLDivElement | null>(null);
 
 const src = computed(() => (props.item ? convertFileSrc(props.item.path) : ""));
 
+// 画面模式（适应/铺满/拉伸/原始）：全局默认，右键播放框菜单切换，驱动视频 object-fit
+const scaleObjectFitStyle = computed(() => ({ objectFit: scaleObjectFit(pb.playback.videoScale) }));
+
+// 播放框右键菜单（播放模式 / AB 循环 / 画面模式）
+const ctxMenu = ref({ show: false, x: 0, y: 0 });
+const ctxEl = ref<HTMLDivElement | null>(null);
+
+function openCtxMenu(e: MouseEvent) {
+  if (!props.item) return;
+  ctxMenu.value = { show: true, x: e.clientX, y: e.clientY };
+}
+function closeCtxMenu() {
+  ctxMenu.value.show = false;
+}
+function setPlaybackMode(mode: PlaybackMode) {
+  pb.playback.playbackMode = mode;
+  closeCtxMenu();
+}
+function setScale(mode: VideoScale) {
+  pb.playback.videoScale = mode;
+  closeCtxMenu();
+}
+function onCtxDocClick(e: MouseEvent) {
+  if (!ctxMenu.value.show) return;
+  const target = e.target as Node;
+  if (ctxEl.value && !ctxEl.value.contains(target)) closeCtxMenu();
+}
+
 function fmt(t: number): string {
   if (!isFinite(t)) return "0:00";
   const total = Math.floor(t);
@@ -78,14 +107,20 @@ function restorePosition() {
   if (el.paused) el.play().catch(() => {});
 }
 onMounted(restorePosition);
-onMounted(() => document.addEventListener("click", onRateDocClick));
+onMounted(() => {
+  document.addEventListener("click", onRateDocClick);
+  document.addEventListener("click", onCtxDocClick);
+});
 onMounted(() => {
   appWindow
     .isFullscreen()
     .then((v) => (isFullscreen.value = v))
     .catch(() => {});
 });
-onBeforeUnmount(() => document.removeEventListener("click", onRateDocClick));
+onBeforeUnmount(() => {
+  document.removeEventListener("click", onRateDocClick);
+  document.removeEventListener("click", onCtxDocClick);
+});
 onBeforeUnmount(() => {
   if (controlsHideTimer !== null) window.clearTimeout(controlsHideTimer);
 });
@@ -578,7 +613,7 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
       </div>
     </div>
 
-    <div class="canvas" @click="togglePlay">
+    <div class="canvas" @click="togglePlay" @contextmenu.prevent="openCtxMenu">
       <CaptionPanel
         v-if="captionOn && item"
         :subtitles="sub.subtitles.value"
@@ -611,7 +646,7 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
       <div v-else class="playing">
         <video
           v-if="item.media_type === 'video'"
-          ref="mediaEl" :src="src"
+          ref="mediaEl" :src="src" :style="scaleObjectFitStyle"
           @play="onPlay" @pause="playing = false"
           @timeupdate="onTimeUpdate"
           @loadedmetadata="duration = ($event.target as HTMLVideoElement).duration"
@@ -630,7 +665,6 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
           @ended="onEnded"
           @volumechange="onVolumeChange"
         ></audio>
-        <p class="now-title">{{ item.title }}</p>
 
         <Transition name="fade">
           <div v-if="showVolOsd" class="vol-osd">
@@ -693,11 +727,6 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
                 <svg v-if="pb.playback.loopMode === 'single'" fill="none" viewBox="0 0 24 24" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>
                 <svg v-else fill="none" viewBox="0 0 24 24" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
               </button>
-              <div class="btn-group mode-group">
-                <button class="ctl mode-seg" :class="{ 'cur': effectiveMode === 'broadcast' }" title="连播模式（点击=设为全局）" :disabled="!item" @click="pb.playback.playbackMode = 'broadcast'">连播</button>
-                <button class="ctl mode-seg" :class="{ 'cur': effectiveMode === 'intensive' }" title="精听模式（点击=设为全局）" :disabled="!item" @click="pb.playback.playbackMode = 'intensive'">精听</button>
-              </div>
-              <button class="ctl ab-btn" :class="'ab-' + abMarkClass()" :disabled="!item" :title="abText()" @click="onAB">{{ abText() }}</button>
               <button class="ctl overlay-toggle" :class="{ active: props.overlayOn }" title="迷你悬浮字幕窗（Ctrl+Alt+O 显隐 · Ctrl+Alt+L 穿透锁定）" @click="emit('overlayToggle')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5"/><rect x="13" y="13" width="8" height="6" rx="1"/></svg></button>
             </div>
         <div class="btn-group">
@@ -744,6 +773,31 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
       </div>
     </div>
     </Transition>
+
+    <Teleport to="body">
+      <div v-if="ctxMenu.show" ref="ctxEl" class="pstage-ctx" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
+        <div class="pstage-ctx-label">播放模式</div>
+        <button class="pstage-ctx-item" :class="{ cur: effectiveMode === 'broadcast' }" @click="setPlaybackMode('broadcast')">
+          <span>连播</span>
+          <svg v-if="effectiveMode === 'broadcast'" width="14" height="14" viewBox="0 0 24 24" fill="none" style="stroke:var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        </button>
+        <button class="pstage-ctx-item" :class="{ cur: effectiveMode === 'intensive' }" @click="setPlaybackMode('intensive')">
+          <span>精听</span>
+          <svg v-if="effectiveMode === 'intensive'" width="14" height="14" viewBox="0 0 24 24" fill="none" style="stroke:var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        </button>
+        <div class="pstage-ctx-sep"></div>
+        <button class="pstage-ctx-item" :class="{ cur: abMarkClass() !== 'none' }" @click="onAB">
+          <span>AB 循环</span>
+          <span class="pstage-ctx-tag">{{ abText() }}</span>
+        </button>
+        <div class="pstage-ctx-sep"></div>
+        <div class="pstage-ctx-label">画面模式</div>
+        <button v-for="m in SCALE_MODES" :key="m.key" class="pstage-ctx-item" :class="{ cur: pb.playback.videoScale === m.key }" @click="setScale(m.key)">
+          <span>{{ m.label }}</span>
+          <svg v-if="pb.playback.videoScale === m.key" width="14" height="14" viewBox="0 0 24 24" fill="none" style="stroke:var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        </button>
+      </div>
+    </Teleport>
   </main>
 </template>
 
@@ -899,15 +953,13 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
   align-items: center;
   justify-content: center;
   gap: 12px;
-  padding: 12px 16px 16px;
+  padding: 0;
 }
 
 .playing video {
   flex: 1;
   width: 100%;
   min-height: 0;
-  object-fit: contain;
-  border-radius: var(--radius-card);
   background: #000;
   outline: none;
   cursor: pointer;
@@ -928,17 +980,6 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
   width: 40%;
   height: 40%;
   color: var(--fg-3);
-}
-
-.now-title {
-  color: var(--fg-1);
-  font-size: 15px;
-  font-weight: 500;
-  text-align: center;
-  max-width: 90%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .controls {
@@ -1322,30 +1363,62 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
   padding: 1px 3px;
   z-index: 5;
 }
-.mode-group {
-  gap: 2px;
+.pstage-ctx {
+  position: fixed;
+  z-index: 100;
+  min-width: 150px;
+  padding: 6px;
+  background: var(--bg-glass);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(16px);
+  user-select: none;
 }
-.ctl.mode-seg {
-  width: auto;
-  padding: 0 8px;
-  font-size: 12px;
-  font-weight: 600;
+.pstage-ctx-label {
+  padding: 4px 10px 3px;
+  font-size: 11px;
   color: var(--fg-3);
 }
-.ctl.mode-seg.cur {
-  color: var(--accent);
+.pstage-ctx-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
 }
-.ctl.ab-btn {
-  width: auto;
-  padding: 0 8px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--fg-3);
+.pstage-ctx-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
 }
-.ctl.ab-btn.ab-pending {
+.pstage-ctx-item:hover {
+  background: var(--bg-2);
   color: var(--fg-1);
 }
-.ctl.ab-btn.ab-on {
+.pstage-ctx-item.cur {
+  color: var(--accent);
+  font-weight: 600;
+}
+.pstage-ctx-item svg {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+}
+.pstage-ctx-tag {
+  font-size: 11px;
+  color: var(--fg-3);
+  font-variant-numeric: tabular-nums;
+}
+.pstage-ctx-item.cur .pstage-ctx-tag {
   color: var(--accent);
 }
 

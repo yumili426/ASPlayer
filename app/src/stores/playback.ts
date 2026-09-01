@@ -1,4 +1,5 @@
 import { reactive, watch } from "vue";
+import type { VideoScale } from "../lib/videoScale";
 
 export interface PlaybackSettings {
   autoplayNext: boolean; // 列表循环模式下播完自动连播下一集
@@ -7,6 +8,7 @@ export interface PlaybackSettings {
   intensiveAutoPause: boolean; // 精听：每句结束自动暂停（默认开）
   intensiveSentenceLoop: boolean; // 精听：单句循环（默认关）
   intensiveBlindListen: boolean; // 精听：盲听（隐藏译文，默认关）
+  videoScale: VideoScale; // 画面模式：适应/铺满/拉伸/原始（全局默认）
 }
 
 export const defaultPlayback: PlaybackSettings = {
@@ -16,6 +18,7 @@ export const defaultPlayback: PlaybackSettings = {
   intensiveAutoPause: true,
   intensiveSentenceLoop: false,
   intensiveBlindListen: false,
+  videoScale: "fit",
 };
 
 const STORAGE_KEY = "asplayer-playback-v1";
