@@ -28,7 +28,6 @@ import {
   onTranscribeCanceled,
   onTranscribeSegments,
   cancelTranscribe,
-  translateMedia,
   getSubtitleStatus,
   importExternalSubtitle,
 } from "./api/subtitle";
@@ -434,12 +433,6 @@ onMounted(async () => {
   const u2 = await onTranscribeDone(async (mediaId) => {
     sub.setStatus("done", "done", 100, "");
     if (sub.currentId.value === mediaId) sub.load(mediaId);
-    // 若之前点了"转写并翻译"，转写完成后自动触发翻译
-    const auto = sub.consumeAutoTranslate();
-    if (auto != null && auto === mediaId) {
-      sub.setStatus("translating", "translate", 0, "正在翻译…");
-      await translateMedia(mediaId);
-    }
   });
   const u3 = await onTranscribeError((msg) => {
     // eslint-disable-next-line no-console
@@ -450,7 +443,6 @@ onMounted(async () => {
   const u4 = await onTranscribeCanceled((mediaId) => {
     // eslint-disable-next-line no-console
     console.log("[ASPlayer] 转写已取消:", mediaId);
-    sub.consumeAutoTranslate();
     sub.setStatus("partial", "canceled", sub.progress.value, "已取消，可继续转写");
     // 取消后重载已写库的切片字幕，否则字幕面板仍是空（Bug：partial 不显示）
     if (sub.currentId.value === mediaId) sub.load(mediaId);

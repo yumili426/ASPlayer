@@ -120,6 +120,9 @@ pub fn create_overlay_window(app: &AppHandle) -> tauri::Result<()> {
     .resizable(false)
     .skip_taskbar(true)
     .shadow(false)
+    // Windows 上 file drag-drop（OLE drop target）会拦截指针导致 startDragging 失效；
+    // 悬浮窗无需文件拖放，关闭它以让 JS/拖拽区域能正常拖动窗口
+    .disable_drag_drop_handler()
     .visible(false)
     .build()?;
     // 默认非锁定态：可拖动、不穿透；锁定由全局快捷键/设置面板切换

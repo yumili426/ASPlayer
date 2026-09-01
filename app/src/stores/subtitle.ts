@@ -10,17 +10,6 @@ const progress = ref<number>(0); // 0-100
 const message = ref<string>("");
 const currentTime = ref<number>(0); // 秒
 const currentId = ref<number | null>(null);
-let autoTranslateId: number | null = null;
-
-function requestAutoTranslate(mediaId: number | null) {
-  autoTranslateId = mediaId;
-}
-
-function consumeAutoTranslate(): number | null {
-  const id = autoTranslateId;
-  autoTranslateId = null;
-  return id;
-}
 
 async function load(id: number) {
   currentId.value = id;
@@ -82,7 +71,5 @@ export function useSubtitle() {
     clearSubtitles,
     setStatus,
     setTime,
-    requestAutoTranslate,
-    consumeAutoTranslate,
   };
 }

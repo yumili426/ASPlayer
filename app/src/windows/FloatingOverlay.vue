@@ -177,9 +177,7 @@ onUnmounted(() => {
         @pointerdown.stop
       >
         <button class="tbtn" title="上一句" @click="stepOverlaySubtitle(-1)">⏮</button>
-        <button class="tbtn" title="播放/暂停" @click="overlayPlayPause">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 5l12 7-12 7z"/></svg>
-        </button>
+        <button class="tbtn" title="播放/暂停" @click="overlayPlayPause"><span class="play-icon"></span></button>
         <button class="tbtn" title="下一句" @click="stepOverlaySubtitle(1)">⏭</button>
         <span class="sep"></span>
         <div class="seg">
@@ -325,9 +323,15 @@ onUnmounted(() => {
   background: #e5484d;
   color: #fff;
 }
-.tbtn svg {
-  width: 12px;
-  height: 12px;
+/* 播放三角：用 CSS border 画实心直角三角，避免 SVG 缩到 12px 后三角近乎不可见 */
+.play-icon {
+  display: block;
+  width: 0;
+  height: 0;
+  margin-left: 2px;
+  border-left: 10px solid rgba(235, 235, 240, 0.95);
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
 }
 .sep {
   width: 1px;
