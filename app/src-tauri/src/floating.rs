@@ -144,37 +144,51 @@ fn start_lock_hover_watcher(app: &AppHandle) {
         const DWELL: std::time::Duration = std::time::Duration::from_millis(150);
         /// 连续多次采样到窗外才真正收回穿透（迟滞，防止移动途中事件抖动导致按钮消失）
         const MISS_TICKS: u32 = 4;
+        /// 置顶加固间隔（按 POLL 计数）：每个采样周期都重新把悬窗抬回最顶，
+        /// 对抗无边框游戏/其他程序抢占 TOPMOST。独占全屏（exclusive fullscreen）除外。
+        const TOPMOST_EVERY: u32 = 1;
         let mut inside_since: Option<std::time::Instant> = None;
         let mut miss = 0u32;
         let mut lifted = false;
+        let mut tick = 0u32;
         loop {
             std::thread::sleep(POLL);
+            tick = tick.wrapping_add(1);
             let st = h.state::<OverlayState>();
-            if !st.locked.load(Ordering::SeqCst) {
+            if !st.visible.load(Ordering::SeqCst) {
                 inside_since = None;
                 lifted = false;
-                continue;
-            }
-            if !st.visible.load(Ordering::SeqCst) {
-                // 隐藏时维持原穿透状态即可，无需处理 hover
-                inside_since = None;
                 continue;
             }
             let Some(win) = h.get_webview_window(OVERLAY_LABEL) else {
                 continue;
             };
-            // 光标在窗口客户区内。取不到坐标时按"在内"处理：宁可多托举一下
-            // 也不要抖动穿透让解锁钮消失。
-            let cursor_inside = win
-                .cursor_position()
-                .map(|p| {
-                    let (w, hh) = win
-                        .inner_size()
-                        .map(|s| (s.width as f64, s.height as f64))
-                        .unwrap_or((-1.0, -1.0));
-                    p.x >= 0.0 && p.y >= 0.0 && p.x < w && p.y < hh
-                })
-                .unwrap_or(true);
+            // 全屏/其他程序可能抢占 TOPMOST，可见期间周期性把悬窗抬回最顶。
+            // 注意：独占全屏（exclusive fullscreen）下任何置顶窗都无法覆盖，
+            // 需要游戏以无边框/窗口模式运行。
+            if tick % TOPMOST_EVERY == 0 {
+                let _ = win.set_always_on_top(true);
+            }
+            if !st.locked.load(Ordering::SeqCst) {
+                inside_since = None;
+                lifted = false;
+                continue;
+            }
+            // cursor_position 返回屏幕全局坐标，outer_position 是窗口左上角屏幕坐标，
+            // 相减得到相对窗口客户区的坐标，落在 [0, 内宽) × [0, 内高) 即视为"在窗内"。
+            // 取不到坐标时按"在内"处理：宁可多托举一下，也不要抖动穿透让解锁钮消失。
+            let cursor_inside = match (
+                win.cursor_position(),
+                win.outer_position(),
+                win.inner_size(),
+            ) {
+                (Ok(c), Ok(o), Ok(s)) => {
+                    let rx = c.x - o.x as f64;
+                    let ry = c.y - o.y as f64;
+                    rx >= 0.0 && ry >= 0.0 && rx < s.width as f64 && ry < s.height as f64
+                }
+                _ => true,
+            };
             match cursor_inside {
                 true => {
                     miss = 0;

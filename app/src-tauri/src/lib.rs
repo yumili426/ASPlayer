@@ -289,6 +289,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // 关闭主窗口即完整退出：否则悬浮窗（独立子窗口）会一直挂着，进程残留后台。
+        // app.exit(0) 会销毁所有窗口并触发 RunEvent::Exit（退出钩子里注销全局快捷键）。
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                if window.label() == "main" {
+                    window.app_handle().exit(0);
+                }
+            }
+        })
         .setup(|app| {
             resolve_ffmpeg();
             let dir: PathBuf = app.path().app_data_dir()?;
@@ -302,6 +311,49 @@ pub fn run() {
                 eprintln!("[ASPlayer] 创建悬浮窗失败: {e}");
             }
             shortcuts::register_all(app.handle());
+
+            // 系统托盘：运行时展示图标，提供快捷开关与退出。持引用防被垃圾回收。
+            if let Some(icon) = app.default_window_icon().cloned() {
+                let show_main = tauri::menu::MenuItem::with_id(
+                    app,
+                    "show-main",
+                    "显示主窗口",
+                    true,
+                    None::<&str>,
+                )?;
+                let toggle_overlay = tauri::menu::MenuItem::with_id(
+                    app,
+                    "toggle-overlay",
+                    "显示/隐藏悬浮字幕",
+                    true,
+                    None::<&str>,
+                )?;
+                let quit =
+                    tauri::menu::MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+                let menu = tauri::menu::Menu::with_items(app, &[&show_main, &toggle_overlay, &quit])?;
+                let tray = tauri::tray::TrayIconBuilder::new()
+                    .icon(icon)
+                    .menu(&menu)
+                    .show_menu_on_left_click(true)
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "show-main" => {
+                            if let Some(win) = app.get_webview_window("main") {
+                                let _ = win.show();
+                                let _ = win.set_focus();
+                            }
+                        }
+                        "toggle-overlay" => {
+                            let st = app.state::<floating::OverlayState>();
+                            let cur = st.visible.load(std::sync::atomic::Ordering::SeqCst);
+                            let _ = floating::set_overlay_visible(app.clone(), st, !cur);
+                        }
+                        "quit" => app.exit(0),
+                        _ => {}
+                    })
+                    .build(app)?;
+                app.manage(tray);
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
