@@ -35,10 +35,8 @@ const providers: Provider[] = [
 const apiBase = ref("");
 const apiKey = ref("");
 const apiModel = ref("deepseek-chat");
-const vadWindowMs = ref(30);
-const vadMinSilenceMs = ref(300);
-const vadMinChunkMs = ref(1000);
-const vadMaxChunkMs = ref(30000);
+const vadMaxChunkMs = ref(20000);
+const whisperLang = ref("");
 const providerIdx = ref(-1); // -1 = 自定义，不匹配任何预设
 const saving = ref(false);
 const showKey = ref(false);
@@ -311,10 +309,8 @@ async function load() {
     apiBase.value = s.api_base ?? "";
     apiKey.value = s.api_key ?? "";
     apiModel.value = s.api_model ?? "";
-    vadWindowMs.value = Number(s.vad_window_ms ?? 30);
-    vadMinSilenceMs.value = Number(s.vad_min_silence_ms ?? 300);
-    vadMinChunkMs.value = Number(s.vad_min_chunk_ms ?? 1000);
-    vadMaxChunkMs.value = Number(s.vad_max_chunk_ms ?? 30000);
+    vadMaxChunkMs.value = Number(s.vad_max_chunk_ms ?? 20000);
+    whisperLang.value = s.whisper_lang ?? "";
     providerIdx.value = matchProvider(apiBase.value, apiModel.value);
     dictUrlEn.value = s.dict_url_en ?? "";
     dictUrlJa.value = s.dict_url_ja ?? "";
@@ -352,9 +348,6 @@ async function onSave() {
       api_base: apiBase.value,
       api_key: apiKey.value,
       api_model: apiModel.value,
-      vad_window_ms: String(vadWindowMs.value),
-      vad_min_silence_ms: String(vadMinSilenceMs.value),
-      vad_min_chunk_ms: String(vadMinChunkMs.value),
       vad_max_chunk_ms: String(vadMaxChunkMs.value),
     });
     emit("close");
@@ -363,15 +356,13 @@ async function onSave() {
   }
 }
 
-// 「模型」页高级折叠内的转写参数保存：只存 4 个 vad key，不关闭面板
+// 「模型」页高级折叠内的转写参数保存：只存窗口时长 key，不关闭面板
 async function onSaveVad() {
   saving.value = true;
   try {
     await saveSettings({
-      vad_window_ms: String(vadWindowMs.value),
-      vad_min_silence_ms: String(vadMinSilenceMs.value),
-      vad_min_chunk_ms: String(vadMinChunkMs.value),
       vad_max_chunk_ms: String(vadMaxChunkMs.value),
+      whisper_lang: whisperLang.value,
     });
     vadSaved.value = true;
     if (vadSaveTimer) clearTimeout(vadSaveTimer);
@@ -382,10 +373,8 @@ async function onSaveVad() {
 }
 
 function resetVad() {
-  vadWindowMs.value = 30;
-  vadMinSilenceMs.value = 300;
-  vadMinChunkMs.value = 1000;
-  vadMaxChunkMs.value = 30000;
+  vadMaxChunkMs.value = 20000;
+  whisperLang.value = "";
 }
 
 async function onSaveDictUrl() {
@@ -858,26 +847,25 @@ function onClick(e: MouseEvent) {
           </button>
 
           <div v-show="showAdv" class="adv-body">
-            <div class="adv-item">转写分段参数</div>
+            <div class="adv-item">转写参数</div>
             <label class="field">
-              <span>单段最长时间</span>
-              <input v-model.number="vadMaxChunkMs" type="number" min="1000" max="120000" />
-              <small class="field-desc">一句话转写最长不超过它；越短，进度更新更勤、取消也越及时。</small>
+              <span>转写源语言（视频里说的语言）</span>
+              <select v-model="whisperLang">
+                <option value="">自动检测</option>
+                <option value="en">English</option>
+                <option value="zh">中文</option>
+                <option value="ja">日本語</option>
+                <option value="ko">한국어</option>
+                <option value="fr">Français</option>
+                <option value="de">Deutsch</option>
+                <option value="es">Español</option>
+              </select>
+              <small class="field-desc">锁定为视频「音频语言」可显著减少幻觉乱码（比如英文视频选 English）。这是识别语言，不是字幕输出语言；留空则每块自动检测，语速快或带背景音时易漂移成别的语言。</small>
             </label>
             <label class="field">
-              <span>停顿判定</span>
-              <input v-model.number="vadMinSilenceMs" type="number" min="100" max="5000" />
-              <small class="field-desc">一句话停顿超过这段时间，就分成两段。</small>
-            </label>
-            <label class="field">
-              <span>最小分段</span>
-              <input v-model.number="vadMinChunkMs" type="number" min="200" max="10000" />
-              <small class="field-desc">太短的内容会和前后并成一句，通常无需改动。</small>
-            </label>
-            <label class="field">
-              <span>检测窗口</span>
-              <input v-model.number="vadWindowMs" type="number" min="10" max="200" />
-              <small class="field-desc">底层算法参数，保持默认即可。</small>
+              <span>窗口时长</span>
+              <input v-model.number="vadMaxChunkMs" type="number" min="2000" max="120000" />
+              <small class="field-desc">每段转写的固定时长（毫秒）。越大调用越少越快，whisper 在窗内自行在停顿处断句。</small>
             </label>
 
             <div class="adv-actions">

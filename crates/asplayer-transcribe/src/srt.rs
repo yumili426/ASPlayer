@@ -1,5 +1,5 @@
 /// 一条字幕段。start/end 用毫秒。
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Segment {
     pub start_ms: u64,
     pub end_ms: u64,

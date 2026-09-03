@@ -1,4 +1,4 @@
-/// 静音切块（能量阈值 VAD）。纯函数，可单测。
+//! 静音切块（能量阈值 VAD）。纯函数，可单测。
 
 /// 一块音频区间（样本半开区间 + 毫秒）。块间首尾相接覆盖整段。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +27,20 @@ impl Default for VadConfig {
             min_silence_ms: 300,
             min_chunk_ms: 1000,
             max_chunk_ms: 30000,
+        }
+    }
+}
+
+impl VadConfig {
+    /// 固定时长窗口切块：禁用静音检测，仅按 `max_chunk_ms` 硬切成等长首尾相接窗口。
+    /// LLPlayer 式：不按停顿切，靠 whisper 自身的 30s 上下文 + no_speech 阈值在窗内断句。
+    pub fn fixed_windows(max_chunk_ms: i64) -> Self {
+        Self {
+            sample_rate: 16000,
+            window_ms: 30,       // 静音检测彻底关闭，此值不影响固定窗口
+            min_silence_ms: u32::MAX,
+            min_chunk_ms: 1000,  // 末尾不足 1s 的残窗并入前窗，避免产生垃圾行
+            max_chunk_ms,
         }
     }
 }
@@ -152,6 +166,17 @@ pub fn split_samples(samples: &[f32], cfg: &VadConfig) -> Vec<Chunk> {
             a = b;
         }
     }
+    // 末块若小于 min_chunk_ms 且前面有块，并入前块（避免固定窗口末尾产生 <1s 残窗垃圾行）
+    if out.len() >= 2 {
+        let last_idx = out.len() - 1;
+        if out[last_idx].end_ms - out[last_idx].start_ms < cfg.min_chunk_ms {
+            let prev = last_idx - 1;
+            let tail = out[last_idx];
+            out[prev].end_sample = tail.end_sample;
+            out[prev].end_ms = tail.end_ms;
+            out.pop();
+        }
+    }
     out
 }
 
@@ -234,8 +259,46 @@ mod tests {
         s.extend(tone_ms(2000, 440.0));
         s.extend(silence_ms(2000));
         let chunks = split_samples(&s, &VadConfig::default());
-        assert!(chunks.len() >= 1);
+        assert!(!chunks.is_empty());
         assert_eq!(chunks[0].start_ms, 0);
+        let mut prev = 0;
+        for c in &chunks {
+            assert_eq!(c.start_sample, prev);
+            prev = c.end_sample;
+        }
+        assert_eq!(prev, s.len());
+    }
+
+    #[test]
+    fn fixed_windows_cut_contiguous_at_max() {
+        // 45s 音频 → 20s + 20s + 5s，首尾相接覆盖整段
+        let s = tone_ms(45000, 254.0);
+        let chunks = split_samples(&s, &VadConfig::fixed_windows(20000));
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].start_ms, 0);
+        assert_eq!(chunks[0].end_ms, 20000);
+        assert_eq!(chunks[1].start_ms, 20000);
+        assert_eq!(chunks[1].end_ms, 40000);
+        assert_eq!(chunks[2].start_ms, 40000);
+        assert_eq!(chunks[2].end_ms, 45000);
+        let mut prev = 0;
+        for c in &chunks {
+            assert_eq!(c.start_sample, prev);
+            prev = c.end_sample;
+        }
+        assert_eq!(prev, s.len());
+    }
+
+    #[test]
+    fn fixed_windows_absorbs_tiny_tail() {
+        // 40.5s 音频 → 20s + 20s + 0.5s，末残窗并入前块 → 20s + 20.5s
+        let s = tone_ms(40500, 254.0);
+        let chunks = split_samples(&s, &VadConfig::fixed_windows(20000));
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].start_ms, 0);
+        assert_eq!(chunks[0].end_ms, 20000);
+        assert_eq!(chunks[1].start_ms, 20000);
+        assert_eq!(chunks[1].end_ms, 40500);
         let mut prev = 0;
         for c in &chunks {
             assert_eq!(c.start_sample, prev);

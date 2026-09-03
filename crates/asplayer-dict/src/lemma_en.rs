@@ -1,37 +1,5 @@
 use std::collections::HashMap;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_exchange_variants() {
-        let ex = "d:went/i:going/p:gone/3:goes";
-        let map = exchange_variants(ex);
-        assert_eq!(map.get("i"), Some(&"going".to_string()));
-        assert_eq!(map.get("p"), Some(&"gone".to_string()));
-    }
-
-    #[test]
-    fn rule_candidates_english() {
-        let c = rule_candidates("running");
-        assert!(c.contains(&"run".to_string()));
-        let c2 = rule_candidates("studies");
-        assert!(c2.contains(&"study".to_string()));
-        let c3 = rule_candidates("better");
-        assert!(c3.contains(&"good".to_string())); // 不规则列表
-        assert!(rule_candidates("making").contains(&"make".to_string())); // 静音e
-        assert!(rule_candidates("stopped").contains(&"stop".to_string())); // 双写ed
-        assert!(rule_candidates("went").contains(&"go".to_string())); // 不规则
-        assert!(rule_candidates("cat").contains(&"cat".to_string())); // 未变形词返回自身
-    }
-
-    #[test]
-    fn normalize_surface_lowercases() {
-        assert_eq!(normalize_surface(" Running "), "running");
-    }
-}
-
 pub fn normalize_surface(w: &str) -> String {
     w.trim().to_lowercase()
 }
@@ -133,5 +101,37 @@ fn irr(w: &str) -> Option<&'static str> {
         "went" => Some("go"), "gone" => Some("go"), "children" => Some("child"), "men" => Some("man"),
         "ran" => Some("run"), "ate" => Some("eat"), "is" | "are" | "was" | "were" => Some("be"),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_exchange_variants() {
+        let ex = "d:went/i:going/p:gone/3:goes";
+        let map = exchange_variants(ex);
+        assert_eq!(map.get("i"), Some(&"going".to_string()));
+        assert_eq!(map.get("p"), Some(&"gone".to_string()));
+    }
+
+    #[test]
+    fn rule_candidates_english() {
+        let c = rule_candidates("running");
+        assert!(c.contains(&"run".to_string()));
+        let c2 = rule_candidates("studies");
+        assert!(c2.contains(&"study".to_string()));
+        let c3 = rule_candidates("better");
+        assert!(c3.contains(&"good".to_string())); // 不规则列表
+        assert!(rule_candidates("making").contains(&"make".to_string())); // 静音e
+        assert!(rule_candidates("stopped").contains(&"stop".to_string())); // 双写ed
+        assert!(rule_candidates("went").contains(&"go".to_string())); // 不规则
+        assert!(rule_candidates("cat").contains(&"cat".to_string())); // 未变形词返回自身
+    }
+
+    #[test]
+    fn normalize_surface_lowercases() {
+        assert_eq!(normalize_surface(" Running "), "running");
     }
 }

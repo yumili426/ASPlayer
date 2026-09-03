@@ -6,8 +6,8 @@ export function transcribeMedia(id: number, lang?: string, resume = false) {
   return invoke<void>("transcribe_media", { id, resume, ...(lang ? { lang } : {}) });
 }
 
-export function translateMedia(id: number) {
-  return invoke<void>("translate_media", { id });
+export function translateMedia(id: number, force = false) {
+  return invoke<void>("translate_media", { id, force });
 }
 
 export function cancelTranscribe(id: number) {

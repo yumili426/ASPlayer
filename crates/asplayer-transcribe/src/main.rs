@@ -56,7 +56,7 @@ fn main() -> Result<()> {
 
             println!("[2/3] whisper.cpp 转写中（模型：{model}）…");
             let samples = audio::read_samples_f32(&wav)?;
-            let segments = whisper::transcribe(&model, lang.as_deref(), &samples)?;
+            let segments = whisper::transcribe(&model, lang.as_deref(), None, &samples)?;
 
             println!("[3/3] 写出结果（{} 段）", segments.len());
             let stem = media_path

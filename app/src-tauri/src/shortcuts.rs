@@ -45,7 +45,7 @@ fn reg(
     // 用户会以为功能坏了。按候选列表依次降级（Ctrl+Alt+X → Ctrl+Alt+Shift+X）。
     for (label, sc) in scs {
         let f = f.clone();
-        match gs.on_shortcut(sc.clone(), move |app, _s, e| f(app, &e)) {
+        match gs.on_shortcut(*sc, move |app, _s, e| f(app, &e)) {
             Ok(_) => {
                 eprintln!("[ASPlayer][shortcuts] 已注册 {label}（{name}）");
                 return;
@@ -66,7 +66,7 @@ pub fn register_all(app: &AppHandle) {
 
     // 播放/暂停：直接转发到主窗
     reg(
-        &gs,
+        gs,
         "播放/暂停",
         &[("Ctrl+Alt+Space".to_string(), ctrl_alt(Code::Space)), ("Ctrl+Alt+Shift+Space".to_string(), ctrl_alt_shift(Code::Space))],
         |app, e| {
@@ -80,7 +80,7 @@ pub fn register_all(app: &AppHandle) {
 
     // 悬浮窗显隐
     reg(
-        &gs,
+        gs,
         "悬浮窗显隐",
         &[("Ctrl+Alt+O".to_string(), ctrl_alt(Code::KeyO)), ("Ctrl+Alt+Shift+O".to_string(), ctrl_alt_shift(Code::KeyO))],
         |app, e| {
@@ -92,7 +92,7 @@ pub fn register_all(app: &AppHandle) {
 
     // 穿透锁定切换
     reg(
-        &gs,
+        gs,
         "悬浮窗锁定",
         &[("Ctrl+Alt+L".to_string(), ctrl_alt(Code::KeyL)), ("Ctrl+Alt+Shift+L".to_string(), ctrl_alt_shift(Code::KeyL))],
         |app, e| {
@@ -113,7 +113,7 @@ pub fn register_all(app: &AppHandle) {
         (Code::ArrowRight, 1i32, "Right"),
     ] {
         reg(
-            &gs,
+            gs,
             dir,
             &[
                 (format!("Ctrl+Alt+{dir}"), ctrl_alt(key)),

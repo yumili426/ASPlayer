@@ -50,9 +50,25 @@ impl Whisper {
 
     /// 对单块 samples 解码，返回「相对该块起点」的段时间戳（毫秒，0 基）。
     /// 每个块用独立的 `WhisperState`，块间无上下文串扰。绝对偏移由调用方统一加。
-    pub fn transcribe(&mut self, language: Option<&str>, samples: &[f32]) -> Result<Vec<Segment>> {
+    /// `prompt` 填上一窗口尾部文本，作为 whisper 的 initial_prompt 提供跨窗口上下文：
+    /// 让 whisper 能续写上一窗口未完成的句子，并沿上文稳住语种话题。
+    pub fn transcribe(
+        &mut self,
+        language: Option<&str>,
+        prompt: Option<&str>,
+        samples: &[f32],
+    ) -> Result<Vec<Segment>> {
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         params.set_language(language);
+        // initial_prompt 携带上一窗口尾部文本，跨窗口续句 + 沿上文稳住语种；
+        // 仅当有文本时设置（该字段接受 &str，空串无意义）。
+        if let Some(prompt) = prompt {
+            params.set_initial_prompt(prompt);
+        }
+        // 不用 no_context：no_context=true 会逐段独立解码，前段还是英文、后段就跳到中文/阿语，
+        // 语种漂移反而更碎。保留默认「以上文为条件」让 whisper 沿上文保持语种与话题一致。
+        // 抑制非语音占位 token（[MUSIC]/[BLANK_AUDIO]/♪），防幻觉主要靠 set_language 钉住语种。
+        params.set_suppress_non_speech_tokens(true);
         params.set_print_progress(false);
         params.set_print_special(false);
         params.set_print_realtime(false);
@@ -67,7 +83,9 @@ impl Whisper {
             // whisper-rs 时间戳单位为 10ms（厘秒），×10 转毫秒
             let start_ms = state.full_get_segment_t0(i)? as u64 * 10;
             let end_ms = state.full_get_segment_t1(i)? as u64 * 10;
-            let text = state.full_get_segment_text(i)?;
+            // whisper 个别 token 映射为非 UTF-8 字节序列，`full_get_segment_text` 会直接报错中断；
+            // 用 lossy 变体把非法字节替换成 U+FFFD，绝不让整轮转写因此失败。
+            let text = state.full_get_segment_text_lossy(i)?;
             if !text.trim().is_empty() {
                 out.push(Segment { start_ms, end_ms, text });
             }
@@ -80,7 +98,8 @@ impl Whisper {
 pub fn transcribe(
     model_path: &str,
     language: Option<&str>,
+    prompt: Option<&str>,
     samples: &[f32],
 ) -> Result<Vec<Segment>> {
-    Whisper::load(model_path)?.transcribe(language, samples)
+    Whisper::load(model_path)?.transcribe(language, prompt, samples)
 }

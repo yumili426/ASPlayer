@@ -118,7 +118,7 @@ fn verify_file(path: &Path) -> bool {
         return false;
     };
     let mut head = [0u8; 4];
-    f.read_exact(&mut head).is_ok() && &head == MAGIC
+    f.read_exact(&mut head).is_ok() && head == MAGIC
 }
 
 /// 对某档状态做一次改造（不存在则插入默认 Idle 档）
@@ -378,7 +378,7 @@ pub fn download_model(size: String, app: AppHandle) -> Result<(), String> {
     clear_cancel(&size);
     with_dl(&size, |d| {
         d.status = DlStatus::Downloading;
-        d.bytes_downloaded = std::fs::metadata(&model_file_path(&models_dir(), &size))
+        d.bytes_downloaded = std::fs::metadata(model_file_path(&models_dir(), &size))
             .map(|m| m.len())
             .unwrap_or(0);
         d.error = None;

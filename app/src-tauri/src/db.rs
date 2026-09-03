@@ -127,7 +127,7 @@ impl MediaDb {
              ON CONFLICT(path) DO UPDATE SET title = excluded.title, file_size = excluded.file_size",
             rusqlite::params![path, title, media_type, file_size],
         )?;
-        Ok(self.conn.query_row("SELECT id FROM media_files WHERE path = ?1", [path], |r| r.get(0))?)
+        self.conn.query_row("SELECT id FROM media_files WHERE path = ?1", [path], |r| r.get(0))
     }
 
     pub fn list_media(&self) -> rusqlite::Result<Vec<MediaItem>> {
@@ -340,6 +340,15 @@ impl MediaDb {
         Ok(())
     }
 
+    /// 清空某媒体的全部译文（重新翻译前调用，未翻译段判定见 get_untranslated_subtitles）
+    pub fn clear_translations(&self, media_id: i64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE subtitles SET translation = '' WHERE media_id = ?1",
+            [&media_id.to_string()],
+        )?;
+        Ok(())
+    }
+
     /// 设置某媒体的字幕状态与语言
     pub fn set_subtitle_status(
         &self,
@@ -479,6 +488,22 @@ mod tests {
         let untrans = db.get_untranslated_subtitles(id)?;
         assert_eq!(untrans.len(), 1);
         assert_eq!(untrans[0].text, "good night");
+        Ok(())
+    }
+
+    #[test]
+    fn clear_translations_blanks_all_rows() -> rusqlite::Result<()> {
+        let db = MediaDb::open_in_memory()?;
+        let id = db.upsert_media("D:/m/a.mp3", "a", "audio", 0)?;
+        db.save_subtitle(id, 0, 1000, "one", "一", 0)?;
+        db.save_subtitle(id, 2000, 3000, "two", "二", 1)?;
+        db.clear_translations(id)?;
+        let rows = db.get_subtitles(id)?;
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.translation.is_empty()));
+        // 清空后未翻译判定覆盖全部行
+        let untrans = db.get_untranslated_subtitles(id)?;
+        assert_eq!(untrans.len(), 2);
         Ok(())
     }
 

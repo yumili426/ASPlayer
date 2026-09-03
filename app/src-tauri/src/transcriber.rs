@@ -19,23 +19,6 @@ pub struct SubtitleRow {
     pub ordinal: i64,
 }
 
-/// 把单块 whisper 返回的段映射为字幕行：绝对时间偏移 + 递增 ordinal + 空译文。
-fn rows_for_chunk(
-    segs: &[asplayer_transcribe::srt::Segment],
-    chunk_start_ms: i64,
-) -> Vec<SubtitleRow> {
-    segs.iter()
-        .enumerate()
-        .map(|(i, s)| SubtitleRow {
-            start_ms: s.start_ms as i64 + chunk_start_ms,
-            end_ms: s.end_ms as i64 + chunk_start_ms,
-            text: s.text.clone(),
-            translation: String::new(),
-            ordinal: i as i64,
-        })
-        .collect()
-}
-
 /// whisper 对「无语音/纯音乐/音效」段会输出占位文本（如 [BLANK_AUDIO]/[MUSIC]/(music)/♪）。
 /// 这类行不是真实对白，写库与 emit 前应丢弃，避免污染字幕列表。
 fn is_noise_text(text: &str) -> bool {
@@ -80,7 +63,7 @@ const EVENT_SEGMENTS: &str = "transcribe://segments";
 /// 正在运行的转写任务集合（media_id）。
 /// 1) 防止同一媒体并发触发多个转写任务；
 /// 2) 支持取消：请求取消 = 从集合移除，任务在下一个检查点自行退出。
-/// （whisper 推理为单次整体调用不可中断，取消最迟在其结束后生效）
+///    （whisper 推理为单次整体调用不可中断，取消最迟在其结束后生效）
 static RUNNING_TRANSCRIPTIONS: LazyLock<Mutex<HashSet<i64>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
@@ -179,6 +162,53 @@ fn with_db<T>(
     let guard = db.lock().map_err(|e| anyhow::anyhow!("数据库锁异常: {e}"))?;
     f(&guard).map_err(anyhow::Error::from)
 }
+
+/// 解析转写源语言：调用方参数优先，其次 DB 设置 `whisper_lang`，两者皆空 → 空串（whisper 自动检测）。
+fn source_lang(db: &Arc<Mutex<MediaDb>>, param: &str) -> String {
+    if !param.trim().is_empty() {
+        return param.to_string();
+    }
+    with_db(db, |d| Ok(d.get_setting("whisper_lang").ok().flatten().unwrap_or_default()))
+        .unwrap_or_default()
+}
+
+const MAX_PROMPT_CHARS: usize = 160;
+
+/// 把 whisper 返回的相对时间戳段偏移到绝对毫秒。
+pub(crate) fn offset_absolute(
+    segs: &[asplayer_transcribe::srt::Segment],
+    w_start_ms: u64,
+) -> Vec<asplayer_transcribe::srt::Segment> {
+    segs.iter()
+        .map(|s| asplayer_transcribe::srt::Segment {
+            start_ms: s.start_ms + w_start_ms,
+            end_ms: s.end_ms + w_start_ms,
+            text: s.text.clone(),
+        })
+        .collect()
+}
+
+/// 构造下一窗口的 `initial_prompt`：取本窗口已解码文本的最近 ~160 字符。
+pub(crate) fn build_prompt_tail(window_text: &str) -> Option<String> {
+    let s = window_text.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let tail: String = s.chars().rev().take(MAX_PROMPT_CHARS).collect::<Vec<_>>().into_iter().rev().collect();
+    Some(tail)
+}
+
+/// 转写切块参数：固定时长窗口（LLPlayer 式），窗口长度取 `vad_max_chunk_ms`，缺省 20s。
+fn chunk_config(db: &MediaDb) -> asplayer_transcribe::vad::VadConfig {
+    let window_ms = db
+        .get_setting("vad_max_chunk_ms")
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(20_000);
+    asplayer_transcribe::vad::VadConfig::fixed_windows(window_ms)
+}
+
 /// 转写中止原因
 enum TranscribeStop {
     Canceled,
@@ -191,43 +221,23 @@ fn fail(db: &Arc<Mutex<MediaDb>>, media_id: i64, msg: String) -> TranscribeStop 
     TranscribeStop::Error(msg)
 }
 
-/// 从 DB 设置读取 VAD 切块参数（缺省回退默认值）
-fn vad_config(db: &MediaDb) -> asplayer_transcribe::vad::VadConfig {
-    let mut cfg = asplayer_transcribe::vad::VadConfig::default();
-    if let Some(v) = db.get_setting("vad_window_ms").ok().flatten() {
-        if let Ok(n) = v.parse() { cfg.window_ms = n; }
-    }
-    if let Some(v) = db.get_setting("vad_min_silence_ms").ok().flatten() {
-        if let Ok(n) = v.parse() { cfg.min_silence_ms = n; }
-    }
-    if let Some(v) = db.get_setting("vad_min_chunk_ms").ok().flatten() {
-        if let Ok(n) = v.parse() { cfg.min_chunk_ms = n; }
-    }
-    if let Some(v) = db.get_setting("vad_max_chunk_ms").ok().flatten() {
-        if let Ok(n) = v.parse() { cfg.max_chunk_ms = n; }
-    }
-    cfg
-}
-
 /// 转写步骤主体（锁外耗时操作 + 数据库短锁）。resume=true 从断点继续，false 清空重转。
 fn transcribe_inner(
     app: &AppHandle,
     db: &Arc<Mutex<MediaDb>>,
     media_id: i64,
-    lang_str: &str,
+    lang_opt: Option<&str>,
     resume: bool,
     path: &str,
     tmp: &std::path::Path,
 ) -> Result<(), TranscribeStop> {
-    let lang_opt = if lang_str.is_empty() { None } else { Some(lang_str) };
-
     // 清空/断点策略：fresh 则清字幕与断点；resume 保持已有断点
-    let _ = with_db(db, |d| {
+    with_db(db, |d| {
         if !resume {
             d.clear_subtitles(media_id)?;
             d.set_transcribe_next_ms(media_id, 0)?;
         }
-        d.set_subtitle_status(media_id, "transcribing", lang_str)
+        d.set_subtitle_status(media_id, "transcribing", lang_opt.unwrap_or(""))
     })
     .map_err(|e| fail(db, media_id, format!("数据库异常: {e}")))?;
     emit_progress(app, media_id, "extract", 5, "抽取音轨…");
@@ -255,7 +265,7 @@ fn transcribe_inner(
         let g = db.lock().map_err(|e| fail(db, media_id, format!("数据库锁异常: {e}")))?;
         (
             crate::models::resolve_model_path(&g).to_string_lossy().into_owned(),
-            vad_config(&g),
+            chunk_config(&g),
         )
     };
 
@@ -265,7 +275,7 @@ fn transcribe_inner(
     }
     let total = chunks.len();
 
-    // 断点：跳过 end_ms <= next_ms 的已完成块
+    // 断点：跳过 end_ms <= next_ms 的已完成块（每次都在块边界落盘，故无重复）。
     let next_ms = with_db(db, |d| d.get_transcribe_next_ms(media_id)).unwrap_or(0);
     let start_idx = chunks.iter().position(|c| c.end_ms > next_ms).unwrap_or(total);
 
@@ -273,56 +283,67 @@ fn transcribe_inner(
         Ok(w) => w,
         Err(e) => return Err(fail(db, media_id, format!("加载模型失败: {e}"))),
     };
+    let mut prompt_tail: Option<String> = None;
+    let mut ordinal: i64 = 0;
 
-    for idx in start_idx..total {
+    for (idx, ch) in chunks.iter().enumerate().skip(start_idx) {
         // 块间检查点：取消最迟在一个块内生效
         if !transcription_running(media_id) {
             return Err(TranscribeStop::Canceled);
         }
-        let c = chunks[idx];
-        let chunk_samples = &samples[c.start_sample..c.end_sample];
-        let segs = match whisper.transcribe(lang_opt, chunk_samples) {
+        let chunk_samples = &samples[ch.start_sample..ch.end_sample];
+        let segs = match whisper.transcribe(lang_opt, prompt_tail.as_deref(), chunk_samples) {
             Ok(s) => s,
             Err(e) => return Err(fail(db, media_id, format!("转写失败: {e}"))),
         };
-        // 丢弃无语音/纯音乐段的占位文本（[BLANK_AUDIO] 等），不写库、不进入流式列表
+        // 相对 → 绝对毫秒；丢弃无语音/纯音乐占位
+        let segs = offset_absolute(&segs, ch.start_ms as u64);
         let segs: Vec<_> = segs.into_iter().filter(|s| !is_noise_text(&s.text)).collect();
+        let chunk_text: String = segs.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ");
 
-        // 时间戳偏移（块内相对 → 绝对毫秒）+ 锁内幂等回写 + 断点推进
-        let _ = with_db(db, |d| {
-            for (i, s) in segs.iter().enumerate() {
-                d.save_subtitle(
-                    media_id,
-                    s.start_ms as i64 + c.start_ms,
-                    s.end_ms as i64 + c.start_ms,
-                    &s.text,
-                    "",
-                    i as i64,
-                )?;
+        // 每个 whisper 段即一行字幕（LLPlayer 式：不按时间间隙合并，避免 run-on 句号堆叠）
+        let mut saved: Vec<(asplayer_transcribe::srt::Segment, i64)> = Vec::new();
+        for s in segs {
+            saved.push((s, ordinal));
+            ordinal += 1;
+        }
+        with_db(db, |d| {
+            for (s, ord) in &saved {
+                d.save_subtitle(media_id, s.start_ms as i64, s.end_ms as i64, &s.text, "", *ord)?;
             }
-            d.set_transcribe_next_ms(media_id, c.end_ms)?;
+            d.set_transcribe_next_ms(media_id, ch.end_ms)?;
             Ok(())
         })
         .map_err(|e| fail(db, media_id, format!("回写字幕失败: {e}")))?;
 
-        // 构建该块字幕行并推送实时事件（写库已成功，音轨时间已换算为绝对毫秒）
-        let rows = rows_for_chunk(&segs, c.start_ms);
-        let _ = app.emit(EVENT_SEGMENTS, SegmentsPayload { media_id, rows });
+        // 逐句推送实时事件（时间已为绝对毫秒）
+        for (s, ord) in &saved {
+            let rows = vec![SubtitleRow {
+                start_ms: s.start_ms as i64,
+                end_ms: s.end_ms as i64,
+                text: s.text.clone(),
+                translation: String::new(),
+                ordinal: *ord,
+            }];
+            let _ = app.emit(EVENT_SEGMENTS, SegmentsPayload { media_id, rows });
+        }
+
+        prompt_tail = build_prompt_tail(&chunk_text);
 
         let prog = 15 + 65 * (idx + 1) as u64 / total as u64;
-        emit_progress(app, media_id, "transcribe", prog as u8, &format!("转写 {}/{} 块", idx + 1, total));
+        emit_progress(app, media_id, "transcribe", prog as u8, &format!("转写 {}/{} 段", idx + 1, total));
     }
 
-    // 全部完成：清断点，置 done
-    let _ = with_db(db, |d| {
+    // 全部完成：清断点、置 done。
+    with_db(db, |d| {
         d.set_transcribe_next_ms(media_id, 0)?;
-        d.set_subtitle_status(media_id, "done", lang_str)
+        d.set_subtitle_status(media_id, "done", lang_opt.unwrap_or(""))
     })
     .map_err(|e| fail(db, media_id, format!("数据库异常: {e}")))?;
     Ok(())
 }
 
-/// 转写任务（后台线程调用）：抽音轨 → VAD 切块 → 逐块 whisper → 逐块写库 + 断点 → done。
+/// 转写任务（后台线程调用）：抽音轨 → 固定窗口切块 → 带上下文逐块 whisper → 每段即一行字幕写库 + 每块断点 → done。
 /// 取消落地：有断点 → partial（可续跑）；无断点 → none。
 pub fn run_transcription(
     app: AppHandle,
@@ -346,9 +367,10 @@ pub fn run_transcription(
         }
     };
 
-    let lang_str = lang.unwrap_or_default();
+    let lang_str = source_lang(&db, &lang.unwrap_or_default());
+    let lang_opt = if lang_str.is_empty() { None } else { Some(lang_str.as_str()) };
     let tmp = std::env::temp_dir().join(format!("asplayer-{media_id}"));
-    let result = transcribe_inner(&app, &db, media_id, &lang_str, resume, &path, &tmp);
+    let result = transcribe_inner(&app, &db, media_id, lang_opt, resume, &path, &tmp);
 
     let _ = std::fs::remove_dir_all(&tmp);
     unregister_transcription(media_id);
@@ -377,8 +399,9 @@ pub fn run_transcription(
 }
 
 
-/// 翻译任务（后台线程调用）：读取未翻译段 → 批量翻译 → 回写
-pub fn run_translation(app: AppHandle, db: Arc<Mutex<MediaDb>>, media_id: i64) {
+/// 翻译任务（后台线程调用）：读取未翻译段 → 批量翻译 → 回写。
+/// force=true 时先清空该媒体全部译文，再全量重译（用于修正错位的旧译文）。
+pub fn run_translation(app: AppHandle, db: Arc<Mutex<MediaDb>>, media_id: i64, force: bool) {
     // 数据库读写短锁；翻译 API 调用在锁外。
     let (status, lang) = match with_db(&db, |d| d.get_subtitle_status(media_id)) {
         Ok(v) => v,
@@ -390,6 +413,13 @@ pub fn run_translation(app: AppHandle, db: Arc<Mutex<MediaDb>>, media_id: i64) {
     if status != "done" {
         let _ = app.emit(EVENT_ERROR, "请先完成转写再翻译".to_string());
         return;
+    }
+    // 重新翻译：先把旧译文全部清空，使 get_untranslated_subtitles 覆盖所有行。
+    if force {
+        if let Err(e) = with_db(&db, |d| d.clear_translations(media_id)) {
+            let _ = app.emit(EVENT_ERROR, format!("清空旧译文失败: {e}"));
+            return;
+        }
     }
 
     let cfg = with_db(&db, |d| Ok(resolve_api_config(d))).unwrap_or_else(|_| {
@@ -456,9 +486,20 @@ pub fn run_translation(app: AppHandle, db: Arc<Mutex<MediaDb>>, media_id: i64) {
 
 #[cfg(test)]
 mod tests {
-    use super::is_local_base;
-    use super::is_noise_text;
-    use super::rows_for_chunk;
+    use super::*;
+    use crate::db::MediaDb;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn source_lang_param_overrides_setting() {
+        let db = MediaDb::open_in_memory().unwrap();
+        db.save_setting("whisper_lang", "zh").unwrap();
+        let db = Arc::new(Mutex::new(db));
+        assert_eq!(source_lang(&db, "en"), "en"); // 参数优先
+        assert_eq!(source_lang(&db, ""), "zh"); // 回退设置
+        db.lock().unwrap().save_setting("whisper_lang", "ja").unwrap();
+        assert_eq!(source_lang(&db, ""), "ja");
+    }
 
     #[test]
     fn local_bases_allow_empty_key() {
@@ -477,25 +518,6 @@ mod tests {
     }
 
     #[test]
-    fn rows_for_chunk_offsets_and_ordinals() {
-        use asplayer_transcribe::srt::Segment;
-        let segs = vec![
-            Segment { start_ms: 0, end_ms: 500, text: "a".into() },
-            Segment { start_ms: 600, end_ms: 1200, text: "b".into() },
-        ];
-        let rows = rows_for_chunk(&segs, 3000);
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].start_ms, 3000);
-        assert_eq!(rows[0].end_ms, 3500);
-        assert_eq!(rows[0].text, "a");
-        assert_eq!(rows[0].translation, "");
-        assert_eq!(rows[0].ordinal, 0);
-        assert_eq!(rows[1].start_ms, 3600);
-        assert_eq!(rows[1].end_ms, 4200);
-        assert_eq!(rows[1].ordinal, 1);
-    }
-
-    #[test]
     fn is_noise_text_flags_placeholders() {
         assert!(is_noise_text("[BLANK_AUDIO]"));
         assert!(is_noise_text("  [blank_audio]  "));
@@ -509,6 +531,43 @@ mod tests {
         assert!(!is_noise_text("I knew you were still awake."));
         assert!(!is_noise_text("(sighs)"));
         assert!(!is_noise_text("♪-adjacent words are content"));
+    }
+
+    // ---- 流式整句 helper 单测 ----
+    use asplayer_transcribe::srt::Segment as Seg;
+
+    fn seg(start: u64, end: u64, text: &str) -> Seg {
+        Seg { start_ms: start, end_ms: end, text: text.into() }
+    }
+
+    #[test]
+    fn offset_absolute_adds_window_start() {
+        let segs = vec![seg(0, 500, "a"), seg(600, 1200, "b")];
+        let out = offset_absolute(&segs, 3000);
+        assert_eq!(out[0].start_ms, 3000);
+        assert_eq!(out[0].end_ms, 3500);
+        assert_eq!(out[1].start_ms, 3600);
+        assert_eq!(out[1].end_ms, 4200);
+    }
+
+    #[test]
+    fn build_prompt_tail_takes_tail_chars() {
+        // 200 字节内容：头尾不同，确保取的是「尾部」而非「头部」。
+        let long = format!("{}::::{}", "a".repeat(100), "b".repeat(100));
+        let t = build_prompt_tail(&long).unwrap();
+        assert_eq!(t.chars().count(), 160);
+        // 尾部应保留末尾的 100 个 b；若错误地取头部则只会留下 56 个 b
+        assert!(t.ends_with(&"b".repeat(100)), "tail should keep trailing b's");
+        // 空输入 → None
+        assert_eq!(build_prompt_tail("   "), None);
+        assert_eq!(build_prompt_tail(""), None);
+    }
+
+    #[test]
+    fn source_lang_defaults_to_empty() {
+        let db = MediaDb::open_in_memory().unwrap();
+        let db = Arc::new(Mutex::new(db));
+        assert_eq!(source_lang(&db, ""), "");
     }
 }
 

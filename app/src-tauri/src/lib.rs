@@ -40,7 +40,7 @@ fn resolve_ffmpeg() {
         if c.is_file() {
             if let Ok(abs) = std::fs::canonicalize(&c) {
                 // 幂等设置环境变量
-                let _ = std::env::set_var("ASPLAYER_FFMPEG", &abs);
+                std::env::set_var("ASPLAYER_FFMPEG", &abs);
             }
             return;
         }
@@ -144,12 +144,12 @@ fn transcribe_media(
     Ok(())
 }
 
-/// 触发后台翻译（仅转写完成后有效）
+/// 触发后台翻译（仅转写完成后有效）。force=true 先清空旧译文再全量重译（修正错位）。
 #[tauri::command]
-fn translate_media(id: i64, app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+fn translate_media(id: i64, force: bool, app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
     let db = state.db.clone();
     std::thread::spawn(move || {
-        transcriber::run_translation(app, db, id);
+        transcriber::run_translation(app, db, id, force);
     });
     Ok(())
 }

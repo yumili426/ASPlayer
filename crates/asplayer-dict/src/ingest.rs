@@ -21,7 +21,7 @@ pub fn parse_en_csv(header: &str, data: &str) -> Result<Vec<EnEntry>> {
         .flexible(true)
         .from_reader(data.as_bytes());
 
-    let is_header = |rec: &csv::StringRecord| rec.get(0).map_or(false, |c| c == "word");
+    let is_header = |rec: &csv::StringRecord| rec.get(0) == Some("word");
 
     for (i, rec) in rdr.records().enumerate() {
         let rec = rec.context("csv record")?;

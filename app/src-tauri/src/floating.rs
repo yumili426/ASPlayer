@@ -166,7 +166,7 @@ fn start_lock_hover_watcher(app: &AppHandle) {
             // 全屏/其他程序可能抢占 TOPMOST，可见期间周期性把悬窗抬回最顶。
             // 注意：独占全屏（exclusive fullscreen）下任何置顶窗都无法覆盖，
             // 需要游戏以无边框/窗口模式运行。
-            if tick % TOPMOST_EVERY == 0 {
+            if tick.is_multiple_of(TOPMOST_EVERY) {
                 let _ = win.set_always_on_top(true);
             }
             if !st.locked.load(Ordering::SeqCst) {
@@ -192,18 +192,14 @@ fn start_lock_hover_watcher(app: &AppHandle) {
             match cursor_inside {
                 true => {
                     miss = 0;
-                    match lifted {
-                        false => {
-                            let since = inside_since.get_or_insert_with(std::time::Instant::now);
-                            if since.elapsed() >= DWELL {
-                                if win.set_ignore_cursor_events(false).is_ok() {
-                                    lifted = true;
-                                    let _ =
-                                        h.emit_to(OVERLAY_LABEL, "overlay://hover-unlock", true);
-                                }
-                            }
+                    if !lifted {
+                        let since = inside_since.get_or_insert_with(std::time::Instant::now);
+                        if since.elapsed() >= DWELL
+                            && win.set_ignore_cursor_events(false).is_ok()
+                        {
+                            lifted = true;
+                            let _ = h.emit_to(OVERLAY_LABEL, "overlay://hover-unlock", true);
                         }
-                        true => {}
                     }
                 }
                 false => {
