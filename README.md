@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/Tauri-2-green.svg" alt="Tauri" />
   <img src="https://img.shields.io/badge/Vue-3-42b883.svg" alt="Vue" />
   <img src="https://img.shields.io/badge/whisper.cpp-via%20whisper--rs-orange.svg" alt="whisper.cpp" />
-  <img src="https://img.shields.io/badge/status-0.1.4-informational.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/status-0.2.0-informational.svg" alt="Version" />
 </p>
 
 ---
@@ -104,7 +104,11 @@ ASPlayer 的定位很简单：**在本地把没有字幕的语言内容，一次
 
 ## 📸 界面预览
 
-> 截图将在后续版本补充 —— 主窗（播放器 + 播放列表 + 字幕面板）、悬浮字幕窗、设置面板、查词卡片。
+<p align="center">
+  <img src="./assets/asplayer-screenshot.png" alt="ASPlayer 主界面" width="95%" />
+</p>
+
+> 主窗（播放器 + 播放列表 + 字幕面板）；悬浮字幕窗、设置面板、查词卡片截图后续补充。
 
 ---
 
