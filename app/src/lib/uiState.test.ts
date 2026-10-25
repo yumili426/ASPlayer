@@ -45,6 +45,17 @@ describe("resolvePrimaryAction", () => {
     expect(s.progress).toBe(42);
   });
 
+  it("翻译中显示取消翻译", () => {
+    const s = resolvePrimaryAction(item({ subtitle_status: "translating" }), [], 37);
+    expect(s.action).toBe("cancel");
+    expect(s.label).toBe("取消翻译");
+    expect(s.progress).toBe(37);
+  });
+
+  it("已转写但字幕列表为空时就绪，不重新转写", () => {
+    expect(resolvePrimaryAction(item({ subtitle_status: "done" }), [], null).action).toBe("ready");
+  });
+
   it("错误时重新转写", () => {
     expect(resolvePrimaryAction(item({ subtitle_status: "error" }), [], null).action).toBe("retranscribe");
   });
@@ -84,5 +95,15 @@ describe("sortRecentMedia", () => {
       item({ id: 9, last_played_at: "2026-10-24 10:00:00" }),
     ];
     expect(sortRecentMedia(list).map((m) => m.id)).toEqual([9, 5]);
+  });
+
+  it("不修改输入数组顺序", () => {
+    const list = [
+      item({ id: 1, last_played_at: "2026-10-20 10:00:00" }),
+      item({ id: 2, last_played_at: null }),
+      item({ id: 3, last_played_at: "2026-10-24 10:00:00" }),
+    ];
+    sortRecentMedia(list);
+    expect(list.map((m) => m.id)).toEqual([1, 2, 3]);
   });
 });
