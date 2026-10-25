@@ -70,7 +70,7 @@ function defaultDrawerOpen() {
   }
 })();
 
-const safeDrawer = computed(() => drawerOpen.value && winWidth.value >= 720);
+const safeDrawer = computed(() => drawerOpen.value && winWidth.value > 720);
 
 // ---- 顶栏 CTA ----
 type SubStatus = MediaItem["subtitle_status"];

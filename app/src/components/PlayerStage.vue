@@ -1018,8 +1018,9 @@ defineExpose({
   width: 100%;
 }
 
+/* 进度行直接浮于始终深色的舞台/视频之上，故使用固定浅色而非主题令牌 */
 .time {
-  color: var(--fg-2);
+  color: rgba(255, 255, 255, 0.72);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   min-width: 40px;
@@ -1031,7 +1032,7 @@ defineExpose({
   appearance: none;
   height: 4px;
   border-radius: var(--radius-pill);
-  background: var(--bg-2);
+  background: rgba(255, 255, 255, 0.22);
   border: none;
   outline: none;
   cursor: pointer;
@@ -1042,7 +1043,7 @@ defineExpose({
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: var(--accent);
+  background: #f5f6f7;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
