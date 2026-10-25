@@ -609,11 +609,13 @@ onMounted(async () => {
   const u2 = await onTranscribeDone(async (mediaId) => {
     sub.setStatus("done", "done", 100, "");
     setItemStatus(mediaId, "done");
-    if (sub.currentId.value === mediaId) await sub.load(mediaId);
-    const n = sub.subtitles.value.length;
-    const hit = items.value.find((m) => m.id === mediaId);
-    if (hit) hit.subtitle_count = n;
-    if (current.value?.id === mediaId) current.value.subtitle_count = n;
+    if (sub.currentId.value === mediaId) {
+      await sub.load(mediaId);
+      const n = sub.subtitles.value.length;
+      const hit = items.value.find((m) => m.id === mediaId);
+      if (hit) hit.subtitle_count = n;
+      if (current.value?.id === mediaId) current.value.subtitle_count = n;
+    }
     activeJobId = null;
     // 转写完成后自动补翻译（一次性；翻译自身的 done 事件不会再触发）
     if (autoTranslateAfterTranscribe && current.value?.id === mediaId) {
