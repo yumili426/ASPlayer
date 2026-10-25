@@ -982,6 +982,7 @@ defineExpose({
   gap: 8px;
   background: transparent;
   border: none;
+  visibility: visible;
   transition:
     right 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
     opacity 320ms ease,
@@ -996,6 +997,12 @@ defineExpose({
   opacity: 0;
   transform: translateY(12px);
   pointer-events: none;
+  visibility: hidden;
+  transition:
+    right 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 320ms ease,
+    transform 320ms ease,
+    visibility 0s linear 320ms;
 }
 
 /* 全屏且控制条隐藏时隐藏鼠标指针，移动鼠标即恢复 */
