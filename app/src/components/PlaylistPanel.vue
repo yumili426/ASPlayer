@@ -207,17 +207,27 @@ const sortedItems = computed(() => {
 });
 
 const emptyState = computed(() => {
-  const hasQuery = search.value.trim().length > 0;
+  if (props.recentOnly && sortRecentMedia(props.items).length === 0) {
+    return { title: "还没有播放记录", sub: "播放任意素材后会出现在这里" };
+  }
   if (props.items.length === 0) {
     return props.recentOnly
       ? { title: "还没有播放记录", sub: "播放任意素材后会出现在这里" }
       : { title: "媒体库还是空的", sub: "点击右上角导入文件或文件夹" };
   }
-  if (props.recentOnly && !hasQuery) {
-    return { title: "还没有播放记录", sub: "播放任意素材后会出现在这里" };
-  }
   return { title: "无匹配结果", sub: "换个关键词试试" };
 });
+
+const COVER_GRADIENTS = [
+  "linear-gradient(150deg, #35506a, #0d151c 72%)",
+  "linear-gradient(150deg, #5b4730, #191108 72%)",
+  "linear-gradient(150deg, #40365c, #120e1c 72%)",
+  "linear-gradient(150deg, #2e5145, #0b1712 72%)",
+];
+
+function coverStyle(id: number) {
+  return { background: COVER_GRADIENTS[((id % 4) + 4) % 4] };
+}
 
 function fmtDuration(ms: number): string {
   if (!ms) return "00:00";
@@ -274,7 +284,7 @@ function fmtDuration(ms: number): string {
 
     <div v-else class="pl-scroll">
       <div
-        v-for="(item, i) in sortedItems"
+        v-for="item in sortedItems"
         :key="item.id"
         class="pl-item"
         :class="{ active: item.id === currentId }"
@@ -283,7 +293,7 @@ function fmtDuration(ms: number): string {
         @mousemove="onItemHover($event, item)"
         @mouseleave="onItemLeave"
       >
-        <span class="pl-num">{{ item.id === currentId ? "▶" : i + 1 }}</span>
+        <span class="pl-cover" :style="coverStyle(item.id)" aria-hidden="true" />
         <span class="pl-name">{{ item.title }}</span>
         <span v-if="item.subtitle_count > 0" class="pl-sub" :title="`${item.subtitle_count} 段字幕`">字</span>
         <span class="pl-dur">{{ fmtDuration(item.duration_ms) }}</span>
@@ -561,16 +571,17 @@ function fmtDuration(ms: number): string {
   border-left-color: var(--accent);
 }
 
-.pl-num {
-  width: 18px;
-  font-size: 11px;
-  color: var(--fg-3);
-  text-align: center;
-  flex-shrink: 0;
+.pl-cover {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  border-radius: 7px;
+  opacity: 0.85;
 }
 
-.pl-item.active .pl-num {
-  color: var(--accent);
+.pl-item.active .pl-cover {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .pl-name {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, ref } from "vue";
 import type { MediaItem } from "../types";
 import type { ProfileOverride } from "../lib/intensive";
 import { sortRecentMedia } from "../lib/uiState";
@@ -55,11 +55,16 @@ function onLeave() {
     leaveTimer = null;
   }, 180);
 }
+
+onBeforeUnmount(() => {
+  if (enterTimer !== null) window.clearTimeout(enterTimer);
+  if (leaveTimer !== null) window.clearTimeout(leaveTimer);
+});
 </script>
 
 <template>
   <aside class="rail" :class="{ open }" @mouseenter="onEnter" @mouseleave="onLeave">
-    <div class="rail-collapsed">
+    <div class="rail-collapsed" :inert="open">
       <div class="rail-mark" aria-hidden="true"></div>
       <button
         v-for="m in covers"
@@ -78,7 +83,7 @@ function onLeave() {
       </button>
     </div>
 
-    <div class="rail-expanded">
+    <div class="rail-expanded" :inert="!open">
       <div class="rx-head">
         <b>素材</b>
         <div class="rx-tools">
@@ -90,6 +95,11 @@ function onLeave() {
           <button class="rail-icon" title="导入文件夹" @click="emit('importFolder')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            </svg>
+          </button>
+          <button class="rail-icon" title="刷新" @click="emit('refresh')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4" />
             </svg>
           </button>
         </div>
@@ -131,7 +141,7 @@ function onLeave() {
   background: var(--panel-bg);
   backdrop-filter: blur(20px);
   box-shadow: var(--shadow-card);
-  transition: width 300ms cubic-bezier(0.22, 0.61, 0.36, 1), background 300ms ease;
+  transition: width 320ms cubic-bezier(0.22, 0.61, 0.36, 1), background 320ms ease;
 }
 
 .rail.open {
