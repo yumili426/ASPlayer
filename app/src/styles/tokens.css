@@ -118,7 +118,7 @@ button {
   transition: background 150ms ease, color 150ms ease, transform 150ms ease;
 }
 
-button:hover {
+button:not(:disabled):hover {
   filter: brightness(1.08);
 }
 
