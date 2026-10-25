@@ -4,11 +4,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { MediaItem } from "../types";
 import type { ProfileOverride } from "../lib/intensive";
+import { sortRecentMedia } from "../lib/uiState";
 
 const props = defineProps<{
   items: MediaItem[];
   currentId: number | null;
   loading: boolean;
+  embedded?: boolean;
+  recentOnly?: boolean;
 }>();
 const emit = defineEmits<{
   play: [item: MediaItem];
@@ -183,9 +186,10 @@ const sortBy = ref<"added" | "title" | "duration" | "subtitle">("added");
 
 const sortedItems = computed(() => {
   const q = search.value.trim().toLowerCase();
-  let list = props.items;
+  let list = props.recentOnly ? sortRecentMedia(props.items) : props.items;
   if (q) list = list.filter((m) => m.title.toLowerCase().includes(q));
   const arr = [...list];
+  if (props.recentOnly) return arr;
   switch (sortBy.value) {
     case "title":
       arr.sort((a, b) => a.title.localeCompare(b.title, "zh-CN"));
@@ -202,6 +206,19 @@ const sortedItems = computed(() => {
   return arr;
 });
 
+const emptyState = computed(() => {
+  const hasQuery = search.value.trim().length > 0;
+  if (props.items.length === 0) {
+    return props.recentOnly
+      ? { title: "还没有播放记录", sub: "播放任意素材后会出现在这里" }
+      : { title: "媒体库还是空的", sub: "点击右上角导入文件或文件夹" };
+  }
+  if (props.recentOnly && !hasQuery) {
+    return { title: "还没有播放记录", sub: "播放任意素材后会出现在这里" };
+  }
+  return { title: "无匹配结果", sub: "换个关键词试试" };
+});
+
 function fmtDuration(ms: number): string {
   if (!ms) return "00:00";
   const total = Math.floor(ms / 1000);
@@ -215,9 +232,9 @@ function fmtDuration(ms: number): string {
 </script>
 
 <template>
-  <aside class="playlist">
+  <aside class="playlist" :class="{ embedded: props.embedded }">
     <!-- 面板头 -->
-    <div class="pl-head">
+    <div v-if="!props.embedded" class="pl-head">
       <div class="pl-head-left">
         <span class="pl-title">播放列表</span>
         <span class="pl-count">{{ loading ? "…" : `${sortedItems.length} 个` }}</span>
@@ -241,7 +258,7 @@ function fmtDuration(ms: number): string {
     <!-- 搜索与排序 -->
     <div class="pl-tools">
       <input v-model="search" class="pl-search" type="text" placeholder="搜索标题…" />
-      <select v-model="sortBy" class="pl-sort">
+      <select v-if="!props.recentOnly" v-model="sortBy" class="pl-sort">
         <option value="added">默认</option>
         <option value="title">标题</option>
         <option value="duration">时长</option>
@@ -250,14 +267,9 @@ function fmtDuration(ms: number): string {
     </div>
 
     <!-- 空态 / 列表 -->
-    <div v-if="items.length === 0" class="pl-empty">
-      <p>媒体库还是空的</p>
-      <p class="pl-empty-sub">点击右上角导入文件或文件夹</p>
-    </div>
-
-    <div v-else-if="sortedItems.length === 0" class="pl-empty">
-      <p>无匹配结果</p>
-      <p class="pl-empty-sub">换个关键词试试</p>
+    <div v-if="items.length === 0 || sortedItems.length === 0" class="pl-empty">
+      <p>{{ emptyState.title }}</p>
+      <p class="pl-empty-sub">{{ emptyState.sub }}</p>
     </div>
 
     <div v-else class="pl-scroll">
@@ -275,6 +287,11 @@ function fmtDuration(ms: number): string {
         <span class="pl-name">{{ item.title }}</span>
         <span v-if="item.subtitle_count > 0" class="pl-sub" :title="`${item.subtitle_count} 段字幕`">字</span>
         <span class="pl-dur">{{ fmtDuration(item.duration_ms) }}</span>
+        <span
+          v-if="item.duration_ms > 0 && item.playback_position > 0"
+          class="pl-progress"
+          :style="{ width: Math.min(100, (item.playback_position / item.duration_ms) * 100) + '%' }"
+        />
       </div>
     </div>
 
@@ -512,6 +529,7 @@ function fmtDuration(ms: number): string {
 }
 
 .pl-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -520,6 +538,16 @@ function fmtDuration(ms: number): string {
   color: var(--fg-2);
   border-left: 2px solid transparent;
   transition: background 0.12s ease, color 0.12s ease;
+}
+
+.pl-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  opacity: 0.7;
 }
 
 .pl-item:hover {
@@ -736,5 +764,19 @@ function fmtDuration(ms: number): string {
   font-variant-numeric: tabular-nums;
   text-align: right;
   word-break: break-all;
+}
+
+.playlist.embedded {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.playlist.embedded .pl-tools {
+  padding: 0 10px 8px;
 }
 </style>
