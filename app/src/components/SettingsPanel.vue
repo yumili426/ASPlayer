@@ -456,6 +456,26 @@ function onClick(e: MouseEvent) {
             </button>
           </div>
         </div>
+
+        <div class="row">
+          <span class="row-label">播放时自动隐藏控件</span>
+          <div class="segmented">
+            <button
+              class="segment"
+              :class="{ active: pb.playback.chromeAutoHide }"
+              @click="pb.playback.chromeAutoHide = true"
+            >
+              开
+            </button>
+            <button
+              class="segment"
+              :class="{ active: !pb.playback.chromeAutoHide }"
+              @click="pb.playback.chromeAutoHide = false"
+            >
+              关
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="section" v-show="activeTab === 'playback'">
