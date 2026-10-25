@@ -49,7 +49,7 @@ onUnmounted(() => {
       </svg>
     </button>
 
-    <div class="tb-drag" data-tauri-drag-region @dblclick="toggleMaximize">
+    <div class="tb-drag" data-tauri-drag-region>
       <div class="tb-doc">
         <h1>{{ props.title || "ASPlayer" }}</h1>
         <p v-if="props.meta">{{ props.meta }}</p>
@@ -209,7 +209,10 @@ onUnmounted(() => {
   width: 15px;
   height: 15px;
   border-radius: 50%;
-  background: conic-gradient(var(--on-accent) var(--p), rgba(0, 0, 0, 0.18) 0);
+  background: conic-gradient(
+    var(--on-accent) var(--p),
+    color-mix(in srgb, var(--on-accent) 22%, transparent) 0
+  );
   mask: radial-gradient(circle, transparent 52%, #000 54%);
   -webkit-mask: radial-gradient(circle, transparent 52%, #000 54%);
 }
