@@ -95,7 +95,9 @@ const primary = computed(() => {
     sub.status.value === "transcribing" || sub.status.value === "translating"
       ? sub.progress.value
       : null;
-  return resolvePrimaryAction(liveItem, sub.subtitles.value, progress);
+  // 切换媒体时 sub 仍持有上一部的字幕；不能用它决定新媒体的 CTA
+  const subs = sub.currentId.value === current.value?.id ? sub.subtitles.value : [];
+  return resolvePrimaryAction(liveItem, subs, progress);
 });
 
 const meta = computed(() => {
@@ -405,6 +407,8 @@ function onKeydown(e: KeyboardEvent) {
   // 正在录制快捷键时，忽略全局快捷键
   if (sc.recording.value) return;
   if (e.key === "Escape") {
+    // DictCard 自己处理 Esc，这里不要再顺带关掉下层控件
+    if (dictOpen.value) return;
     if (topMenuOpen.value) {
       topMenuOpen.value = false;
       return;
@@ -568,18 +572,32 @@ function toggleSubtitle() {
   wakeChrome();
 }
 
+let primaryLockUntil = 0;
+let activeJobId: number | null = null;
+let autoTranslateAfterTranscribe = false;
+
 function onPrimaryAction() {
+  // 双击保护：第一次点击启动任务，第二次点击会在状态返回前面误判为“取消”
+  if (Date.now() < primaryLockUntil) return;
+  primaryLockUntil = Date.now() + 400;
   const a = primary.value.action;
-  if (a === "cancel") stageRef.value?.doCancelTranscribe();
-  else if (a === "translate") stageRef.value?.doTranslate(false);
-  else if (a === "resume") stageRef.value?.doTranscribe(true);
-  else if (a === "transcribe" || a === "retranscribe") stageRef.value?.doTranscribe(false);
-  else if (a === "ready" && !drawerOpen.value) toggleSubtitle();
+  if (a === "cancel") {
+    // 翻译任务不在后端可取消集合内；只有转写阶段才真正可以取消
+    if (liveStatus.value === "transcribing") stageRef.value?.doCancelTranscribe();
+  } else if (a === "translate") stageRef.value?.doTranslate(false);
+  else if (a === "resume") {
+    autoTranslateAfterTranscribe = true;
+    stageRef.value?.doTranscribe(true);
+  } else if (a === "transcribe" || a === "retranscribe") {
+    autoTranslateAfterTranscribe = true;
+    stageRef.value?.doTranscribe(false);
+  } else if (a === "ready" && !drawerOpen.value) toggleSubtitle();
   topMenuOpen.value = false;
 }
 
 onMounted(async () => {
   const u1 = await onTranscribeProgress((e) => {
+    activeJobId = e.mediaId;
     sub.setStatus(
       e.stage === "done" ? "done" : e.stage === "translate" ? "translating" : "transcribing",
       e.stage,
@@ -590,14 +608,27 @@ onMounted(async () => {
   const u2 = await onTranscribeDone(async (mediaId) => {
     sub.setStatus("done", "done", 100, "");
     setItemStatus(mediaId, "done");
-    if (sub.currentId.value === mediaId) sub.load(mediaId);
+    if (sub.currentId.value === mediaId) await sub.load(mediaId);
+    activeJobId = null;
+    // 转写完成后自动补翻译（一次性；翻译自身的 done 事件不会再触发）
+    if (autoTranslateAfterTranscribe && current.value?.id === mediaId) {
+      autoTranslateAfterTranscribe = false;
+      if (sub.subtitles.value.some((s) => !s.translation.trim())) {
+        stageRef.value?.doTranslate(false);
+      }
+    }
   });
   const u3 = await onTranscribeError((msg) => {
     // eslint-disable-next-line no-console
     console.error("[ASPlayer] 转写/翻译错误:", msg);
+    // setStatus 会清空 stage，先记下失败阶段
+    const failedStage = sub.stage.value;
     sub.setStatus("error", "", 0, msg);
-    const id = sub.currentId.value;
-    if (id != null) setItemStatus(id, "error");
+    const id = activeJobId ?? sub.currentId.value;
+    // 翻译失败时字幕仍在（多为 done）；标记 error 会让 CTA 变成“重新转写”，故只标记转写类失败
+    if (failedStage !== "translate" && id != null) setItemStatus(id, "error");
+    activeJobId = null;
+    autoTranslateAfterTranscribe = false;
   });
   // 用户取消转写：复位状态、丢弃挂起的自动翻译待办、刷新列表
   const u4 = await onTranscribeCanceled((mediaId) => {
@@ -605,6 +636,8 @@ onMounted(async () => {
     console.log("[ASPlayer] 转写已取消:", mediaId);
     sub.setStatus("partial", "canceled", sub.progress.value, "已取消，可继续转写");
     setItemStatus(mediaId, "partial");
+    activeJobId = null;
+    autoTranslateAfterTranscribe = false;
     // 取消后重载已写库的切片字幕，否则字幕面板仍是空（Bug：partial 不显示）
     if (sub.currentId.value === mediaId) sub.load(mediaId);
     refresh().catch(() => {});
@@ -671,6 +704,7 @@ onUnmounted(() => {
       @import="importFiles"
       @import-folder="importFolder"
       @play="play"
+      @toggle-subtitle="toggleSubtitle"
       @fullscreen-change="onFullscreenChange"
       @overlay-toggle="onOverlayToggle"
       @import-subtitle="onImportSubtitle"
@@ -764,37 +798,6 @@ onUnmounted(() => {
   height: 100vh;
   overflow: hidden;
   background: var(--bg-0);
-}
-
-.chrome-top,
-.chrome-rail {
-  transition:
-    opacity 320ms ease,
-    transform 320ms ease,
-    visibility 0s linear 0s;
-  visibility: visible;
-}
-
-.chrome-top.is-hidden {
-  opacity: 0;
-  transform: translateY(-10px);
-  pointer-events: none;
-  visibility: hidden;
-  transition:
-    opacity 320ms ease,
-    transform 320ms ease,
-    visibility 0s linear 320ms;
-}
-
-.chrome-rail.is-hidden {
-  opacity: 0;
-  transform: translateX(-10px);
-  pointer-events: none;
-  visibility: hidden;
-  transition:
-    opacity 320ms ease,
-    transform 320ms ease,
-    visibility 0s linear 320ms;
 }
 
 .drawer {

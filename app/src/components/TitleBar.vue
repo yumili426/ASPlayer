@@ -115,6 +115,22 @@ onUnmounted(() => {
   padding: 0 8px 0 12px;
   background: var(--topbar-scrim);
   user-select: none;
+  visibility: visible;
+  transition:
+    opacity 320ms ease,
+    transform 320ms ease,
+    visibility 0s linear 0s;
+}
+
+.titlebar.is-hidden {
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    opacity 320ms ease,
+    transform 320ms ease,
+    visibility 0s linear 320ms;
 }
 
 .tb-icon {

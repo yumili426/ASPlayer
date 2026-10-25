@@ -141,7 +141,26 @@ onBeforeUnmount(() => {
   background: var(--panel-bg);
   backdrop-filter: blur(20px);
   box-shadow: var(--shadow-card);
-  transition: width 320ms cubic-bezier(0.22, 0.61, 0.36, 1), background 320ms ease;
+  visibility: visible;
+  transition:
+    width 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    background 320ms ease,
+    opacity 320ms ease,
+    transform 320ms ease,
+    visibility 0s linear 0s;
+}
+
+.rail.is-hidden {
+  opacity: 0;
+  transform: translateX(-10px);
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    width 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    background 320ms ease,
+    opacity 320ms ease,
+    transform 320ms ease,
+    visibility 0s linear 320ms;
 }
 
 .rail.open {
