@@ -817,7 +817,7 @@ defineExpose({
   background:
     radial-gradient(60% 55% at 62% 34%, rgba(74, 96, 112, 0.28), transparent 70%),
     radial-gradient(40% 40% at 18% 80%, rgba(40, 58, 62, 0.22), transparent 72%),
-    #08090a;
+    var(--stage-bg);
   opacity: 0;
   transition: opacity 320ms ease;
   pointer-events: none;
@@ -989,6 +989,19 @@ defineExpose({
     transform 320ms ease;
 }
 
+.controls::before {
+  content: "";
+  position: absolute;
+  left: -16px;
+  right: -16px;
+  bottom: -12px;
+  height: 150px;
+  background: var(--stage-scrim);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+  pointer-events: none;
+  z-index: -1;
+}
+
 .stage.has-drawer .controls {
   right: 336px;
 }
@@ -1020,7 +1033,7 @@ defineExpose({
 
 /* 进度行直接浮于始终深色的舞台/视频之上，故使用固定浅色而非主题令牌 */
 .time {
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--stage-fg);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   min-width: 40px;
@@ -1032,7 +1045,7 @@ defineExpose({
   appearance: none;
   height: 4px;
   border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--stage-track);
   border: none;
   outline: none;
   cursor: pointer;
@@ -1043,7 +1056,7 @@ defineExpose({
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: #f5f6f7;
+  background: var(--stage-strong);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 

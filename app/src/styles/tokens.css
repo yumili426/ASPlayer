@@ -86,6 +86,15 @@
   --bottombar-scrim: linear-gradient(0deg, rgba(255, 255, 255, 0.78), transparent);
 }
 
+/* 舞台恒为深色（与主题无关）：浮在画面上的文字与控件使用固定浅色 */
+:root {
+  --stage-bg: #08090a;
+  --stage-fg: rgba(255, 255, 255, 0.72);
+  --stage-track: rgba(255, 255, 255, 0.22);
+  --stage-strong: #f5f6f7;
+  --stage-scrim: linear-gradient(0deg, rgba(0, 0, 0, 0.62), transparent);
+}
+
 /* ---- 全局基础 ---- */
 
 * {
