@@ -124,6 +124,15 @@ function clearSearch() {
   searchOpen.value = false;
 }
 
+/** Esc 优先收起搜索：有展开的搜索条或输入内容时返回 true */
+function closeSearch(): boolean {
+  if (!searchOpen.value && !query.value) return false;
+  clearSearch();
+  return true;
+}
+
+defineExpose({ closeSearch });
+
 function fmt(t: number): string {
   const ms = Math.max(0, Math.floor(t));
   const m = Math.floor(ms / 60000);

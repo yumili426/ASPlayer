@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import PlayerStage from "./components/PlayerStage.vue";
 import TitleBar from "./components/TitleBar.vue";
-import PlaylistPanel from "./components/PlaylistPanel.vue";
+import MediaRail from "./components/MediaRail.vue";
 import SubtitlePanel from "./components/SubtitlePanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
 import DictCard from "./components/DictCard.vue";
 import type { MediaItem, DictLookup } from "./types";
 import type { ProfileOverride } from "./lib/intensive";
+import { resolvePrimaryAction } from "./lib/uiState";
 import { dictDownload, dictLookup, onDictStatus } from "./api/dict";
 import { useSubtitle } from "./stores/subtitle";
 import { useShortcuts } from "./stores/shortcuts";
@@ -33,17 +34,126 @@ import {
 } from "./api/subtitle";
 
 const sub = useSubtitle();
+const sc = useShortcuts();
+const pb = usePlayback();
 
 const items = ref<MediaItem[]>([]);
 const current = ref<MediaItem | null>(null);
 const loading = ref(false);
 const settingsOpen = ref(false);
 const theme = ref<"light" | "dark" | "system">("system");
-const showPlaylist = ref(true);
-const showSubtitle = ref(true);
 const stageFullscreen = ref(false);
 const unlisteners: (() => void)[] = [];
 const stageRef = ref<any>(null);
+
+// ---- 单层舞台：左轨 / 字幕抽屉 / 控件自动隐藏 ----
+const railPinned = ref(false);
+const drawerOpen = ref(false);
+const chromeVisible = ref(true);
+const playing = ref(false);
+const topMenuOpen = ref(false);
+const winWidth = ref(window.innerWidth);
+const drawerRef = ref<any>(null);
+
+const DRAWER_KEY = "asplayer-subtitle-drawer-v1";
+
+function defaultDrawerOpen() {
+  return pb.playback.playbackMode === "intensive";
+}
+
+(function initDrawer() {
+  try {
+    const saved = localStorage.getItem(DRAWER_KEY);
+    drawerOpen.value = saved ? saved === "open" : defaultDrawerOpen();
+  } catch {
+    drawerOpen.value = defaultDrawerOpen();
+  }
+})();
+
+const safeDrawer = computed(() => drawerOpen.value && winWidth.value >= 720);
+
+// ---- 顶栏 CTA ----
+type SubStatus = MediaItem["subtitle_status"];
+
+/** 列表里的 subtitle_status 是加载时的快照；转写/翻译结束后同步，避免 CTA 停在旧状态 */
+function setItemStatus(id: number, status: SubStatus) {
+  const hit = items.value.find((m) => m.id === id);
+  if (hit) hit.subtitle_status = status;
+  if (current.value?.id === id) current.value.subtitle_status = status;
+}
+
+const liveStatus = computed<SubStatus>(() => {
+  const s = sub.status.value;
+  if (s === "transcribing" || s === "translating") return s;
+  return current.value?.subtitle_status ?? "none";
+});
+
+const primary = computed(() => {
+  const item = current.value;
+  const liveItem = item ? { ...item, subtitle_status: liveStatus.value } : null;
+  const progress =
+    sub.status.value === "transcribing" || sub.status.value === "translating"
+      ? sub.progress.value
+      : null;
+  return resolvePrimaryAction(liveItem, sub.subtitles.value, progress);
+});
+
+const meta = computed(() => {
+  const it = current.value;
+  if (!it) return "";
+  const parts = [it.media_type === "video" ? "视频" : "音频"];
+  if (it.duration_ms > 0) {
+    const total = Math.floor(it.duration_ms / 1000);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    parts.push(`${m}:${String(s).padStart(2, "0")}`);
+  }
+  const mode = it.profile_override ?? pb.playback.playbackMode;
+  parts.push(mode === "intensive" ? "精听" : "连播");
+  if (it.subtitle_count > 0) parts.push(`${it.subtitle_count} 段字幕`);
+  return parts.join(" · ");
+});
+
+// ---- 播放中自动隐藏顶栏 / 左轨 ----
+let idleTimer: number | null = null;
+
+function isEditableFocus() {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable;
+}
+
+function canAutoHide() {
+  return (
+    pb.playback.chromeAutoHide &&
+    playing.value &&
+    !settingsOpen.value &&
+    !dictOpen.value &&
+    !topMenuOpen.value &&
+    !isEditableFocus()
+  );
+}
+
+function wakeChrome() {
+  chromeVisible.value = true;
+  if (idleTimer !== null) window.clearTimeout(idleTimer);
+  idleTimer = window.setTimeout(() => {
+    if (canAutoHide()) chromeVisible.value = false;
+  }, 2500);
+}
+
+function onWindowResize() {
+  winWidth.value = window.innerWidth;
+}
+
+function onPlayingChange(v: boolean) {
+  playing.value = v;
+  if (v) wakeChrome();
+  else {
+    chromeVisible.value = true;
+    if (idleTimer !== null) window.clearTimeout(idleTimer);
+  }
+}
 
 // ---- 内置词典查词 ----
 const dictOpen = ref(false);
@@ -205,6 +315,7 @@ async function onImportSubtitle(mediaId: number) {
     const count = await importExternalSubtitle(mediaId, path);
     // eslint-disable-next-line no-console
     console.log("[ASPlayer] 导入字幕:", count, "段");
+    setItemStatus(mediaId, "done");
     if (sub.currentId.value === mediaId) {
       sub.setStatus("done", "done", 100, "");
       sub.load(mediaId);
@@ -270,9 +381,6 @@ function isEditableTarget(e: KeyboardEvent): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable;
 }
 
-const sc = useShortcuts();
-const pb = usePlayback();
-
 function togglePlaybackMode() {
   pb.playback.playbackMode = pb.playback.playbackMode === "intensive" ? "broadcast" : "intensive";
 }
@@ -297,11 +405,23 @@ function onKeydown(e: KeyboardEvent) {
   // 正在录制快捷键时，忽略全局快捷键
   if (sc.recording.value) return;
   if (e.key === "Escape") {
+    if (topMenuOpen.value) {
+      topMenuOpen.value = false;
+      return;
+    }
+    if (settingsOpen.value) {
+      settingsOpen.value = false;
+      return;
+    }
+    if (drawerRef.value?.closeSearch?.()) return;
+    if (drawerOpen.value) {
+      toggleSubtitle();
+      return;
+    }
     if (stageFullscreen.value) {
       stageRef.value?.toggleFullscreen();
       return;
     }
-    if (settingsOpen.value) settingsOpen.value = false;
     return;
   }
   if (isEditableTarget(e)) return;
@@ -391,6 +511,28 @@ watch(() => sub.currentId.value, () => {
   dictResult.value = null;
 });
 
+// 播放模式切换时：用户尚未手动开合过抽屉，则跟随模式默认值
+watch(
+  () => pb.playback.playbackMode,
+  () => {
+    try {
+      if (!localStorage.getItem(DRAWER_KEY)) drawerOpen.value = defaultDrawerOpen();
+    } catch {}
+  }
+);
+
+watch(
+  () => pb.playback.chromeAutoHide,
+  (on) => {
+    if (!on) {
+      chromeVisible.value = true;
+      if (idleTimer !== null) window.clearTimeout(idleTimer);
+    } else {
+      wakeChrome();
+    }
+  }
+);
+
 /** 全局快捷键转发来的动作（主窗口最小化/失焦时依然生效） */
 function onGlobalAction(action: string) {
   if (action === "togglePlay") stageRef.value?.togglePlay();
@@ -414,11 +556,26 @@ async function onCancelTranscribe() {
 }
 
 function togglePlaylist() {
-  showPlaylist.value = !showPlaylist.value;
+  railPinned.value = !railPinned.value;
+  wakeChrome();
 }
 
 function toggleSubtitle() {
-  showSubtitle.value = !showSubtitle.value;
+  drawerOpen.value = !drawerOpen.value;
+  try {
+    localStorage.setItem(DRAWER_KEY, drawerOpen.value ? "open" : "closed");
+  } catch {}
+  wakeChrome();
+}
+
+function onPrimaryAction() {
+  const a = primary.value.action;
+  if (a === "cancel") stageRef.value?.doCancelTranscribe();
+  else if (a === "translate") stageRef.value?.doTranslate(false);
+  else if (a === "resume") stageRef.value?.doTranscribe(true);
+  else if (a === "transcribe" || a === "retranscribe") stageRef.value?.doTranscribe(false);
+  else if (a === "ready" && !drawerOpen.value) toggleSubtitle();
+  topMenuOpen.value = false;
 }
 
 onMounted(async () => {
@@ -432,18 +589,22 @@ onMounted(async () => {
   });
   const u2 = await onTranscribeDone(async (mediaId) => {
     sub.setStatus("done", "done", 100, "");
+    setItemStatus(mediaId, "done");
     if (sub.currentId.value === mediaId) sub.load(mediaId);
   });
   const u3 = await onTranscribeError((msg) => {
     // eslint-disable-next-line no-console
     console.error("[ASPlayer] 转写/翻译错误:", msg);
     sub.setStatus("error", "", 0, msg);
+    const id = sub.currentId.value;
+    if (id != null) setItemStatus(id, "error");
   });
   // 用户取消转写：复位状态、丢弃挂起的自动翻译待办、刷新列表
   const u4 = await onTranscribeCanceled((mediaId) => {
     // eslint-disable-next-line no-console
     console.log("[ASPlayer] 转写已取消:", mediaId);
     sub.setStatus("partial", "canceled", sub.progress.value, "已取消，可继续转写");
+    setItemStatus(mediaId, "partial");
     // 取消后重载已写库的切片字幕，否则字幕面板仍是空（Bug：partial 不显示）
     if (sub.currentId.value === mediaId) sub.load(mediaId);
     refresh().catch(() => {});
@@ -473,6 +634,10 @@ onMounted(async () => {
   });
   unlisteners.push(u10);
   window.addEventListener("keydown", onKeydown);
+  window.addEventListener("resize", onWindowResize);
+  window.addEventListener("mousemove", wakeChrome);
+  window.addEventListener("keydown", wakeChrome);
+  wakeChrome();
   refresh();
   // 同步悬浮窗初始状态（Rust 侧是事实来源）
   isOverlayVisible()
@@ -486,41 +651,92 @@ onMounted(async () => {
 onUnmounted(() => {
   unlisteners.forEach((u) => u());
   window.removeEventListener("keydown", onKeydown);
+  window.removeEventListener("resize", onWindowResize);
+  window.removeEventListener("mousemove", wakeChrome);
+  window.removeEventListener("keydown", wakeChrome);
+  if (idleTimer !== null) window.clearTimeout(idleTimer);
   prefersDark.removeEventListener("change", onSystemThemeChange);
 });
 </script>
 
 <template>
-  <div class="app-layout">
-    <TitleBar v-if="!stageFullscreen" />
-    <div class="app-body">
-      <PlayerStage
+  <div class="app-shell">
+    <PlayerStage
       ref="stageRef"
       :item="current"
       :items="items"
       :overlay-on="overlayVisible"
+      :drawer-open="safeDrawer"
+      :chrome-visible="chromeVisible"
       @import="importFiles"
+      @import-folder="importFolder"
       @play="play"
-      @settings="settingsOpen = true"
-      @toggle-playlist="togglePlaylist"
-      @toggle-subtitle="toggleSubtitle"
       @fullscreen-change="onFullscreenChange"
       @overlay-toggle="onOverlayToggle"
       @import-subtitle="onImportSubtitle"
+      @playing-change="onPlayingChange"
     />
+
+    <TitleBar
+      class="chrome-top"
+      :class="{ 'is-hidden': !chromeVisible }"
+      :title="current?.title"
+      :meta="meta"
+      :cta-label="primary.label"
+      :cta-disabled="primary.disabled"
+      :cta-progress="primary.progress"
+      @menu="togglePlaylist"
+      @primary="onPrimaryAction"
+      @more="topMenuOpen = !topMenuOpen"
+    />
+
+    <MediaRail
+      class="chrome-rail"
+      :class="{ 'is-hidden': !chromeVisible }"
+      :items="items"
+      :current-id="current?.id ?? null"
+      :loading="loading"
+      :pinned="railPinned"
+      @play="play"
+      @import="importFiles"
+      @import-folder="importFolder"
+      @refresh="refresh"
+      @import-subtitle="(item) => onImportSubtitle(item.id)"
+      @set-profile="onSetProfile"
+      @settings="settingsOpen = true"
+    />
+
     <SubtitlePanel
-      v-if="showSubtitle && !stageFullscreen"
+      v-if="drawerOpen"
+      ref="drawerRef"
+      class="drawer"
       :subtitles="sub.subtitles.value"
       :current-time="sub.currentTime.value"
       :status="sub.status.value"
       :stage="sub.stage.value"
       :progress="sub.progress.value"
       :message="sub.message.value"
-      @close="showSubtitle = false"
+      @close="toggleSubtitle"
       @seek="seekTo"
       @cancel="onCancelTranscribe"
       @lookup="onDictLookup"
     />
+
+    <button v-else class="drawer-handle" title="展开字幕" @click="toggleSubtitle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m9 6 6 6-6 6" />
+      </svg>
+    </button>
+
+    <div v-if="topMenuOpen" class="menu-scrim" @click="topMenuOpen = false" />
+    <div v-if="topMenuOpen" class="top-menu">
+      <button :disabled="!current" @click="onImportSubtitle(current!.id); topMenuOpen = false">导入字幕</button>
+      <button :disabled="!current" @click="stageRef?.doTranslate(true); topMenuOpen = false">重新翻译</button>
+      <button :disabled="!current" @click="onOverlayToggle(); topMenuOpen = false">悬浮字幕窗</button>
+      <button @click="togglePlaybackMode(); topMenuOpen = false">切换播放模式</button>
+      <button @click="settingsOpen = true; topMenuOpen = false">设置</button>
+    </div>
+
     <DictCard
       :open="dictOpen"
       :loading="dictLoading"
@@ -531,41 +747,142 @@ onUnmounted(() => {
       @lookup="onDictLookup"
       @download="onDictDownload"
     />
-    <PlaylistPanel
-      v-if="showPlaylist && !stageFullscreen"
-      :items="items"
-      :current-id="current?.id ?? null"
-      :loading="loading"
-      @play="play"
-      @import="importFiles"
-      @import-folder="importFolder"
-      @refresh="refresh"
-      @close="showPlaylist = false"
-      @import-subtitle="(item) => onImportSubtitle(item.id)"
-      @set-profile="onSetProfile"
-    />
+
     <SettingsPanel
       :open="settingsOpen"
       :theme="theme"
       @close="settingsOpen = false"
       @set-theme="setTheme"
     />
-    </div>
   </div>
 </template>
 
 <style scoped>
-.app-layout {
-  display: flex;
-  flex-direction: column;
+.app-shell {
+  position: relative;
+  width: 100vw;
   height: 100vh;
+  overflow: hidden;
   background: var(--bg-0);
 }
 
-.app-body {
+.chrome-top,
+.chrome-rail {
+  transition:
+    opacity 320ms ease,
+    transform 320ms ease,
+    visibility 0s linear 0s;
+  visibility: visible;
+}
+
+.chrome-top.is-hidden {
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    opacity 320ms ease,
+    transform 320ms ease,
+    visibility 0s linear 320ms;
+}
+
+.chrome-rail.is-hidden {
+  opacity: 0;
+  transform: translateX(-10px);
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    opacity 320ms ease,
+    transform 320ms ease,
+    visibility 0s linear 320ms;
+}
+
+.drawer {
+  position: absolute;
+  top: 64px;
+  right: var(--gutter);
+  bottom: var(--gutter);
+  z-index: 26;
+}
+
+.drawer-handle {
+  position: absolute;
+  right: var(--gutter);
+  top: 50%;
+  z-index: 26;
+  width: 24px;
+  height: 48px;
+  transform: translate(50%, -50%);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px);
+  color: var(--fg-2);
+}
+
+.drawer-handle:hover {
+  color: var(--fg-1);
+}
+
+.drawer-handle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.menu-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 39;
+}
+
+.top-menu {
+  position: absolute;
+  top: 54px;
+  right: 130px;
+  z-index: 40;
+  min-width: 160px;
+  padding: 6px;
   display: flex;
-  flex: 1;
-  min-height: 0;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  backdrop-filter: blur(24px);
+  box-shadow: var(--shadow-panel);
+}
+
+.top-menu button {
+  padding: 8px 10px;
+  text-align: left;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fg-1);
+  font-size: 12.5px;
+}
+
+.top-menu button:hover {
+  background: var(--bg-2);
+}
+
+.top-menu button:disabled {
+  opacity: 0.35;
+}
+
+@media (max-width: 900px) {
+  .drawer {
+    --drawer-w: 280px;
+  }
+}
+
+@media (max-width: 720px) {
+  .drawer {
+    --drawer-w: min(92vw, 340px);
+  }
 }
 </style>
 
