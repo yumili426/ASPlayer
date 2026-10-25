@@ -33,6 +33,7 @@
   --line: rgba(255, 255, 255, 0.08);
   --panel-border: rgba(255, 255, 255, 0.09);
   --panel-bg: rgba(16, 19, 22, 0.72);
+  --panel-bg-strong: rgba(16, 19, 22, 0.92);
 
   /* 圆角与阴影 */
   --radius-card: 14px;
@@ -76,6 +77,7 @@
   --line: rgba(0, 0, 0, 0.08);
   --panel-border: rgba(0, 0, 0, 0.08);
   --panel-bg: rgba(255, 255, 255, 0.82);
+  --panel-bg-strong: rgba(255, 255, 255, 0.94);
 
   --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.08);
   --shadow-panel: 0 18px 48px rgba(20, 24, 30, 0.16);

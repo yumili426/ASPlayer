@@ -817,7 +817,7 @@ defineExpose({
   background:
     radial-gradient(60% 55% at 62% 34%, rgba(74, 96, 112, 0.28), transparent 70%),
     radial-gradient(40% 40% at 18% 80%, rgba(40, 58, 62, 0.22), transparent 72%),
-    var(--bg-0);
+    #08090a;
   opacity: 0;
   transition: opacity 320ms ease;
   pointer-events: none;

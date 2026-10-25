@@ -885,6 +885,7 @@ onUnmounted(() => {
 @media (max-width: 720px) {
   .drawer {
     --drawer-w: min(92vw, 340px);
+    --panel-bg: var(--panel-bg-strong);
   }
 }
 </style>
