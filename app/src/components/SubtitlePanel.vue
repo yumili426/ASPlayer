@@ -19,6 +19,7 @@ const mode = computed(() => cap.captionStyle.mode);
 
 // 字幕搜索：边打边过滤，命中原文或译文，点击匹配句即 seek（承接既有点击跳转）
 const query = ref("");
+const searchOpen = ref(false);
 const hasQuery = computed(() => query.value.trim().length > 0);
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase();
@@ -77,6 +78,15 @@ function isActive(s: Subtitle) {
   return currentMs.value >= s.start_ms && currentMs.value < s.end_ms;
 }
 
+const activeSub = computed(() => props.subtitles.find(isActive) ?? null);
+
+function seekNext() {
+  const list = props.subtitles;
+  const i = activeSub.value ? list.indexOf(activeSub.value) : -1;
+  const next = list[i + 1];
+  if (next) emit("seek", next.start_ms / 1000);
+}
+
 function fmt(t: number): string {
   const ms = Math.max(0, Math.floor(t));
   const m = Math.floor(ms / 60000);
@@ -110,9 +120,15 @@ function stageLabel() {
         <button class="sp-modeseg" :class="{ active: mode === 'translation' }" @click="cap.captionStyle.mode = 'translation'">译文</button>
       </div>
       <div class="sp-actions">
-        <span v-if="subtitles.length" class="sp-count">{{ hasQuery ? filtered.length + ' / ' + subtitles.length : subtitles.length }} 段</span>
-        <button class="sp-close" title="关闭字幕面板" @click="emit('close')">
-          <svg viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-1)" stroke-width="1.8"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        <button class="sp-icon" title="搜索字幕" :class="{ active: searchOpen }" @click="searchOpen = !searchOpen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+            <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+          </svg>
+        </button>
+        <button class="sp-icon" title="收起字幕" @click="emit('close')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m9 6 6 6-6 6" />
+          </svg>
         </button>
       </div>
     </div>
@@ -131,6 +147,15 @@ function stageLabel() {
       <button v-if="status === 'transcribing'" class="sp-cancel" @click="emit('cancel')">取消转写</button>
     </div>
 
+    <div v-if="activeSub && status !== 'error'" class="sp-now">
+      <div class="sp-now-en">{{ activeSub.text }}</div>
+      <div v-if="activeSub.translation" class="sp-now-zh">{{ activeSub.translation }}</div>
+      <div class="sp-now-actions">
+        <button @click="emit('seek', activeSub.start_ms / 1000)">↺ 重听</button>
+        <button @click="seekNext">下一句</button>
+      </div>
+    </div>
+
     <!-- 错误 -->
     <div v-if="status === 'error'" class="sp-empty">
       <p>字幕生成失败</p>
@@ -140,7 +165,7 @@ function stageLabel() {
 
     <!-- 字幕列表（转写中也会逐句累积显示；空态文案按状态区分） -->
     <div v-else class="sp-list-wrap">
-      <div class="sp-search">
+      <div v-if="searchOpen || hasQuery" class="sp-search">
         <svg class="sp-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <div class="sp-search-field">
           <input v-model="query" class="sp-search-input" type="text" placeholder="搜索字幕…" spellcheck="false" />
@@ -151,7 +176,7 @@ function stageLabel() {
       <div v-if="filtered.length === 0" class="sp-empty">
         <p v-if="hasQuery">无匹配「{{ query.trim() }}」</p>
         <p v-else>{{ status === 'transcribing' ? '正在转写…' : status === 'translating' ? '正在翻译…' : '暂无字幕' }}</p>
-        <p v-if="status === 'none'" class="sp-empty-sub">点击工具栏「转写」生成双语字幕</p>
+        <p v-if="status === 'none'" class="sp-empty-sub">点击顶部「转写并翻译」生成双语字幕</p>
       </div>
       <div v-else class="sp-scroll">
         <div
@@ -191,89 +216,125 @@ function stageLabel() {
 
 <style scoped>
 .subpanel {
-  width: 300px;
-  flex-shrink: 0;
-  background: var(--bg-1);
-  border-left: 1px solid var(--line);
+  width: var(--drawer-w);
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   user-select: none;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  backdrop-filter: blur(24px);
+  box-shadow: var(--shadow-panel);
 }
 
 .sp-head {
+  height: 48px;
+  flex: none;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  min-height: 52px;
+  gap: 8px;
+  padding: 0 10px 0 14px;
   border-bottom: 1px solid var(--line);
 }
 
 .sp-title {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 13px;
+  font-weight: 650;
+  margin-right: auto;
+}
+
+.sp-mode {
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-dim);
+}
+
+.sp-modeseg {
+  padding: 3px 9px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--fg-3);
+  font-size: 11px;
+}
+
+.sp-modeseg.active {
+  background: var(--bg-2);
+  color: var(--fg-1);
 }
 
 .sp-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.sp-mode {
-  display: flex;
   gap: 2px;
-  background: var(--bg-2);
-  border-radius: 7px;
-  padding: 2px;
 }
 
-.sp-modeseg {
-  padding: 4px 8px;
-  border: none;
-  border-radius: 5px;
+.sp-icon {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
   background: transparent;
   color: var(--fg-2);
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
 }
 
-.sp-modeseg.active {
-  background: var(--bg-1);
+.sp-icon:hover,
+.sp-icon.active {
+  background: var(--bg-2);
   color: var(--fg-1);
 }
 
-.sp-count {
-  font-size: 12px;
-  color: var(--fg-3);
+.sp-icon svg {
+  width: 14px;
+  height: 14px;
 }
 
-.sp-close {
-  width: 28px;
-  height: 28px;
+.sp-now {
+  flex: none;
+  margin: 10px 10px 4px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--accent-dim);
+  border-left: 2px solid var(--accent-soft);
+}
+
+.sp-now-en {
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.sp-now-zh {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg-2);
+}
+
+.sp-now-actions {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.sp-now-actions button {
+  padding: 3px 10px;
+  font-size: 11px;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+  color: var(--fg-2);
+}
+
+.sp-now-actions button:hover {
   background: var(--bg-2);
   color: var(--fg-1);
-  border-radius: 7px;
-  cursor: pointer;
-  transition: background 0.15s ease, filter 0.15s ease;
-}
-
-.sp-close:hover {
-  background: var(--bg-2);
-  filter: brightness(1.2);
-}
-
-.sp-close svg {
-  width: 15px;
-  height: 15px;
-  stroke-width: 2;
 }
 
 /* 进度 */
@@ -445,7 +506,7 @@ function stageLabel() {
 
 .sp-line.active {
   background: var(--accent-dim);
-  border-left-color: var(--accent);
+  border-left-color: var(--accent-soft);
 }
 
 .sp-line-time {
