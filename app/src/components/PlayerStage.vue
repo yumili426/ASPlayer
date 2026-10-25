@@ -28,8 +28,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   import: [];
   play: [item: MediaItem];
-  settings: [];
-  togglePlaylist: [];
   toggleSubtitle: [];
   fullscreenChange: [fullscreen: boolean];
   overlayToggle: [];
@@ -492,7 +490,7 @@ watch(playing, (p) => {
   if (isFullscreen.value && p && controlsVisible.value) scheduleHideControls();
 });
 
-watch(playing, (v) => emit("playingChange", v));
+watch(playing, (v) => emit("playingChange", v), { immediate: true });
 
 function applyRate(r: number) {
   rate.value = r;
@@ -681,8 +679,7 @@ defineExpose({
     <Transition name="fade">
       <div
         class="controls"
-        v-show="props.chromeVisible !== false && (!isFullscreen || controlsVisible)"
-        :class="{ 'fs-overlay': isFullscreen }"
+        v-show="!isFullscreen || controlsVisible"
       >
       <div class="seek-row">
         <span class="time">{{ fmt(sub.currentTime.value) }}</span>
@@ -810,7 +807,7 @@ defineExpose({
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: var(--stage-bg, #000);
+  background: #000;
 }
 
 .stage::before {
@@ -882,13 +879,13 @@ defineExpose({
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: var(--fg-1);
+  color: #f5f6f7;
 }
 
 .empty-sub {
   margin-top: 8px;
   font-size: 13px;
-  color: var(--fg-3);
+  color: #a8b0b8;
 }
 
 .empty-actions {
@@ -916,8 +913,12 @@ defineExpose({
 
 .open-btn.ghost {
   background: transparent;
-  border: 1px solid var(--panel-border);
-  color: var(--fg-2);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #c9d1d9;
+}
+
+.open-btn.ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .open-btn:hover {
@@ -1269,13 +1270,9 @@ defineExpose({
   background: var(--accent);
 }
 
-.ctl.play:hover {
+.ctl.play:hover:not(:disabled) {
   background: var(--accent);
   filter: brightness(1.08);
-}
-
-.seek-num {
-  font-size: 9px;
 }
 
 .rate-btn,
