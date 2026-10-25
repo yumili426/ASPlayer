@@ -12,7 +12,13 @@ const props = defineProps<{
   message: string;
 }>();
 
-const emit = defineEmits<{ close: []; seek: [t: number]; cancel: []; lookup: [text: string] }>();
+const emit = defineEmits<{
+  close: [];
+  seek: [t: number];
+  cancel: [];
+  lookup: [text: string];
+  transcribe: [];
+}>();
 
 const cap = useCaptionStyle();
 const mode = computed(() => cap.captionStyle.mode);
@@ -83,13 +89,17 @@ const activeSub = computed(() => props.subtitles.find(isActive) ?? null);
 const scrollEl = ref<HTMLElement | null>(null);
 
 // activeSub 只在句边界变化（不要 watch currentMs，否则每帧都触发）
-watch(activeSub, async (s) => {
-  if (!s) return;
-  await nextTick();
-  scrollEl.value
-    ?.querySelector(".sp-line.active")
-    ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-});
+watch(
+  activeSub,
+  async (s) => {
+    if (!s) return;
+    await nextTick();
+    scrollEl.value
+      ?.querySelector(".sp-line.active")
+      ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  },
+  { immediate: true }
+);
 
 // 句间空隙保留上一句，避免当前句卡片闪烁/布局抖动；切换媒体时清除
 const lastSub = ref<Subtitle | null>(null);
@@ -229,6 +239,7 @@ function stageLabel() {
         <p v-if="hasQuery">无匹配「{{ query.trim() }}」</p>
         <p v-else>{{ status === 'transcribing' ? '正在转写…' : status === 'translating' ? '正在翻译…' : '暂无字幕' }}</p>
         <p v-if="status === 'none'" class="sp-empty-sub">点击顶部「转写并翻译」生成双语字幕</p>
+        <button v-if="status === 'none'" class="sp-start" @click="emit('transcribe')">开始转写</button>
       </div>
       <div v-else ref="scrollEl" class="sp-scroll">
         <div
@@ -465,6 +476,21 @@ function stageLabel() {
 .sp-empty-sub {
   font-size: 12px;
   color: var(--fg-3);
+}
+
+.sp-start {
+  margin-top: 10px;
+  padding: 7px 14px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.sp-start:hover {
+  filter: brightness(1.06);
 }
 
 /* 列表（含搜索条） */

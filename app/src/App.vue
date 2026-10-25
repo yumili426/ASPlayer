@@ -354,6 +354,7 @@ function probeDurations() {
 }
 
 function play(item: MediaItem) {
+  if (current.value?.id !== item.id) sub.clearSubtitles();
   current.value = item;
 }
 
@@ -609,6 +610,10 @@ onMounted(async () => {
     sub.setStatus("done", "done", 100, "");
     setItemStatus(mediaId, "done");
     if (sub.currentId.value === mediaId) await sub.load(mediaId);
+    const n = sub.subtitles.value.length;
+    const hit = items.value.find((m) => m.id === mediaId);
+    if (hit) hit.subtitle_count = n;
+    if (current.value?.id === mediaId) current.value.subtitle_count = n;
     activeJobId = null;
     // 转写完成后自动补翻译（一次性；翻译自身的 done 事件不会再触发）
     if (autoTranslateAfterTranscribe && current.value?.id === mediaId) {
@@ -670,6 +675,7 @@ onMounted(async () => {
   window.addEventListener("resize", onWindowResize);
   window.addEventListener("mousemove", wakeChrome);
   window.addEventListener("keydown", wakeChrome);
+  window.addEventListener("focus", wakeChrome);
   wakeChrome();
   refresh();
   // 同步悬浮窗初始状态（Rust 侧是事实来源）
@@ -687,6 +693,7 @@ onUnmounted(() => {
   window.removeEventListener("resize", onWindowResize);
   window.removeEventListener("mousemove", wakeChrome);
   window.removeEventListener("keydown", wakeChrome);
+  window.removeEventListener("focus", wakeChrome);
   if (idleTimer !== null) window.clearTimeout(idleTimer);
   prefersDark.removeEventListener("change", onSystemThemeChange);
 });
@@ -754,6 +761,7 @@ onUnmounted(() => {
       @seek="seekTo"
       @cancel="onCancelTranscribe"
       @lookup="onDictLookup"
+      @transcribe="stageRef?.doTranscribe(false)"
     />
 
     <button v-else class="drawer-handle" title="展开字幕" @click="toggleSubtitle">
@@ -764,7 +772,7 @@ onUnmounted(() => {
 
     <div v-if="topMenuOpen" class="menu-scrim" @click="topMenuOpen = false" />
     <div v-if="topMenuOpen" class="top-menu">
-      <button :disabled="!current" @click="onImportSubtitle(current!.id); topMenuOpen = false">导入字幕</button>
+      <button :disabled="!current" @click="stageRef?.doImportSubtitle(); topMenuOpen = false">导入字幕</button>
       <button :disabled="!current" @click="stageRef?.doTranslate(true); topMenuOpen = false">重新翻译</button>
       <button :disabled="!current" @click="onOverlayToggle(); topMenuOpen = false">悬浮字幕窗</button>
       <button @click="togglePlaybackMode(); topMenuOpen = false">切换播放模式</button>

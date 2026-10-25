@@ -487,7 +487,15 @@ watch(isFullscreen, (fs) => {
 
 watch(playing, (p) => {
   // 暂停期间保持常显；恢复播放后重新计时隐藏
-  if (isFullscreen.value && p && controlsVisible.value) scheduleHideControls();
+  if (!p) {
+    controlsVisible.value = true;
+    if (controlsHideTimer !== null) {
+      window.clearTimeout(controlsHideTimer);
+      controlsHideTimer = null;
+    }
+    return;
+  }
+  if (isFullscreen.value && controlsVisible.value) scheduleHideControls();
 });
 
 watch(playing, (v) => emit("playingChange", v), { immediate: true });
@@ -538,13 +546,17 @@ function onTimeUpdate() {
   const now = Date.now();
   if (now - lastSave > 3000) {
     lastSave = now;
+    const targetId = props.item!.id;
+    const posMs = Math.round(el.currentTime * 1000);
     import("@tauri-apps/api/core")
-      .then(({ invoke }) =>
-        invoke("save_playback_position", {
-          id: props.item!.id,
-          positionMs: Math.round(el.currentTime * 1000),
-        })
-      )
+      .then(({ invoke }) => invoke("save_playback_position", { id: targetId, positionMs: posMs }))
+      .then(() => {
+        const it = props.item;
+        if (!it || it.id !== targetId) return;
+        it.playback_position = posMs;
+        // 与 SQLite datetime('now') 同格式（UTC、定宽），保证 last_played_at 字典序即时间序
+        it.last_played_at = new Date().toISOString().slice(0, 19).replace("T", " ");
+      })
       .catch(() => {});
   }
 

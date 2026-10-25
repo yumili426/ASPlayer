@@ -61,6 +61,8 @@ onUnmounted(() => {
         v-if="props.ctaLabel"
         class="cta"
         :disabled="props.ctaDisabled"
+        :title="props.ctaLabel"
+        :aria-label="props.ctaLabel"
         @click="emit('primary')"
       >
         <span
@@ -71,7 +73,8 @@ onUnmounted(() => {
         <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 3v10" /><path d="m8 9 4 4 4-4" /><path d="M4 17v2h16v-2" />
         </svg>
-        {{ props.ctaLabel }}
+        <span v-if="props.ctaProgress != null">{{ Math.round(props.ctaProgress) }}%</span>
+        <template v-else>{{ props.ctaLabel }}</template>
       </button>
 
       <button class="tb-icon" title="更多" @click="emit('more')">

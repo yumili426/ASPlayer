@@ -652,7 +652,7 @@ function fmtDuration(ms: number): string {
 }
 
 .pl-ctx-item.danger {
-  color: #ff453a;
+  color: var(--danger);
 }
 
 .pl-ctx-item.danger:hover {
@@ -701,7 +701,7 @@ function fmtDuration(ms: number): string {
 }
 
 .dlg-body strong {
-  color: #ff453a;
+  color: var(--danger);
 }
 
 .dlg-name {
@@ -732,8 +732,8 @@ function fmtDuration(ms: number): string {
 }
 
 .dlg-btn.danger {
-  background: #ff453a;
-  color: #fff;
+  background: var(--danger);
+  color: var(--danger-fg);
 }
 
 .pl-tip {
