@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Subtitle } from "../types";
 import { useCaptionStyle } from "../stores/captionStyle";
 
@@ -80,11 +80,48 @@ function isActive(s: Subtitle) {
 
 const activeSub = computed(() => props.subtitles.find(isActive) ?? null);
 
+const scrollEl = ref<HTMLElement | null>(null);
+
+// activeSub 只在句边界变化（不要 watch currentMs，否则每帧都触发）
+watch(activeSub, async (s) => {
+  if (!s) return;
+  await nextTick();
+  scrollEl.value
+    ?.querySelector(".sp-line.active")
+    ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+});
+
+// 句间空隙保留上一句，避免当前句卡片闪烁/布局抖动；切换媒体时清除
+const lastSub = ref<Subtitle | null>(null);
+watch(activeSub, (s) => {
+  if (s) lastSub.value = s;
+});
+watch(
+  () => props.subtitles,
+  () => {
+    if (lastSub.value && !props.subtitles.includes(lastSub.value)) lastSub.value = null;
+  }
+);
+const nowSub = computed(() => activeSub.value ?? lastSub.value);
+
 function seekNext() {
   const list = props.subtitles;
   const i = activeSub.value ? list.indexOf(activeSub.value) : -1;
-  const next = list[i + 1];
+  const next = i >= 0 ? list[i + 1] : list.find((s) => s.start_ms > currentMs.value);
   if (next) emit("seek", next.start_ms / 1000);
+}
+
+function toggleSearch() {
+  if (searchOpen.value || hasQuery.value) {
+    searchOpen.value = false;
+    query.value = "";
+  } else {
+    searchOpen.value = true;
+  }
+}
+function clearSearch() {
+  query.value = "";
+  searchOpen.value = false;
 }
 
 function fmt(t: number): string {
@@ -120,7 +157,13 @@ function stageLabel() {
         <button class="sp-modeseg" :class="{ active: mode === 'translation' }" @click="cap.captionStyle.mode = 'translation'">译文</button>
       </div>
       <div class="sp-actions">
-        <button class="sp-icon" title="搜索字幕" :class="{ active: searchOpen }" @click="searchOpen = !searchOpen">
+        <button
+          class="sp-icon"
+          title="搜索字幕"
+          :class="{ active: searchOpen || hasQuery }"
+          :aria-expanded="searchOpen || hasQuery"
+          @click="toggleSearch"
+        >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
             <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
           </svg>
@@ -147,11 +190,11 @@ function stageLabel() {
       <button v-if="status === 'transcribing'" class="sp-cancel" @click="emit('cancel')">取消转写</button>
     </div>
 
-    <div v-if="activeSub && status !== 'error'" class="sp-now">
-      <div class="sp-now-en">{{ activeSub.text }}</div>
-      <div v-if="activeSub.translation" class="sp-now-zh">{{ activeSub.translation }}</div>
+    <div v-if="nowSub && status !== 'error'" class="sp-now">
+      <div class="sp-now-en">{{ nowSub.text }}</div>
+      <div v-if="nowSub.translation" class="sp-now-zh">{{ nowSub.translation }}</div>
       <div class="sp-now-actions">
-        <button @click="emit('seek', activeSub.start_ms / 1000)">↺ 重听</button>
+        <button @click="emit('seek', nowSub.start_ms / 1000)">↺ 重听</button>
         <button @click="seekNext">下一句</button>
       </div>
     </div>
@@ -169,7 +212,7 @@ function stageLabel() {
         <svg class="sp-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <div class="sp-search-field">
           <input v-model="query" class="sp-search-input" type="text" placeholder="搜索字幕…" spellcheck="false" />
-          <button v-if="query" class="sp-search-clear" title="清空" @click="query = ''">×</button>
+          <button v-if="query" class="sp-search-clear" title="清空" @click="clearSearch">×</button>
         </div>
       </div>
 
@@ -178,10 +221,10 @@ function stageLabel() {
         <p v-else>{{ status === 'transcribing' ? '正在转写…' : status === 'translating' ? '正在翻译…' : '暂无字幕' }}</p>
         <p v-if="status === 'none'" class="sp-empty-sub">点击顶部「转写并翻译」生成双语字幕</p>
       </div>
-      <div v-else class="sp-scroll">
+      <div v-else ref="scrollEl" class="sp-scroll">
         <div
-          v-for="(s, i) in filtered"
-          :key="i"
+          v-for="s in filtered"
+          :key="s.start_ms"
           class="sp-line"
           :class="{ active: isActive(s) }"
           @click="onLineClick($event, s)"
@@ -217,6 +260,7 @@ function stageLabel() {
 <style scoped>
 .subpanel {
   width: var(--drawer-w);
+  flex: none;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -388,13 +432,13 @@ function stageLabel() {
   border-radius: 6px;
   border: 1px solid rgba(229, 72, 77, 0.45);
   background: transparent;
-  color: #e5484d;
+  color: var(--danger);
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 .sp-cancel:hover {
   background: rgba(229, 72, 77, 0.1);
-  border-color: #e5484d;
+  border-color: var(--danger);
 }
 
 /* 空态 */
@@ -531,10 +575,6 @@ function stageLabel() {
   color: var(--fg-1);
   line-height: 1.4;
   word-break: break-word;
-}
-
-.sp-line.active .sp-line-orig {
-  color: var(--fg-1);
 }
 
 .sp-line-trans {
