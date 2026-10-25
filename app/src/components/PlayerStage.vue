@@ -18,7 +18,13 @@ import { SCALE_MODES, scaleObjectFit, type VideoScale } from "../lib/videoScale"
 const sub = useSubtitle();
 const pb = usePlayback();
 
-const props = defineProps<{ item: MediaItem | null; items: MediaItem[]; overlayOn?: boolean }>();
+const props = defineProps<{
+  item: MediaItem | null;
+  items: MediaItem[];
+  overlayOn?: boolean;
+  drawerOpen?: boolean;
+  chromeVisible?: boolean;
+}>();
 const emit = defineEmits<{
   import: [];
   play: [item: MediaItem];
@@ -28,6 +34,8 @@ const emit = defineEmits<{
   fullscreenChange: [fullscreen: boolean];
   overlayToggle: [];
   importSubtitle: [id: number];
+  playingChange: [playing: boolean];
+  importFolder: [];
 }>();
 
 const mediaEl = ref<HTMLVideoElement | HTMLAudioElement | null>(null);
@@ -484,6 +492,8 @@ watch(playing, (p) => {
   if (isFullscreen.value && p && controlsVisible.value) scheduleHideControls();
 });
 
+watch(playing, (v) => emit("playingChange", v));
+
 function applyRate(r: number) {
   rate.value = r;
   const el = mediaEl.value;
@@ -589,30 +599,20 @@ function onBlindKeyUp(e: KeyboardEvent) {
   if (e.code === "KeyH") blindReveal.value = false;
 }
 
-defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjustVolume, toggleFullscreen, repeatSubtitle, clearIntensiveState });
+defineExpose({
+  togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjustVolume,
+  toggleFullscreen, repeatSubtitle, clearIntensiveState,
+  doTranscribe, doTranslate, doImportSubtitle, doCancelTranscribe,
+});
 </script>
 
 
 <template>
   <main
     class="stage"
-    :class="{ 'fs-hide-cursor': isFullscreen && !controlsVisible }"
+    :class="{ 'fs-hide-cursor': isFullscreen && !controlsVisible, 'has-drawer': drawerOpen, 'chrome-hidden': props.chromeVisible === false }"
     @mousemove="onStageMouseMove"
   >
-    <div class="stage-topbar" v-show="!isFullscreen">
-      <div class="toolbar">
-        <button class="iconbtn" title="播放列表面板" @click="emit('togglePlaylist')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
-        <button class="iconbtn" title="字幕面板" @click="emit('toggleSubtitle')" :class="{ active: captionOn }"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M11 10h6"/></svg></button>
-        <button v-if="item && item.subtitle_status === 'partial'" class="iconbtn" title="从断点继续转写" @click="doTranscribe(true)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v16M20 6l-10 6 10 6z"/></svg></button>
-        <button class="iconbtn" title="转写" @click="doTranscribe()" :disabled="!item || transcribing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10"/><path d="m8 9 4 4 4-4"/><path d="M4 17v2h16v-2"/></svg></button>
-        <button class="iconbtn" title="导入字幕" @click="doImportSubtitle" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5l1 1h10v13H4z"/><path d="M12 9v5m0 0-2-2m2 2 2-2"/></svg></button>
-        <button v-if="transcribing" class="iconbtn" title="取消转写（whisper 推理中不可立即中断，最迟在本轮推理结束后生效）" @click="doCancelTranscribe"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:#e5484d" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg></button>
-        <button class="iconbtn" title="翻译" @click="doTranslate()" :disabled="!item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg></button>
-        <button v-if="item && sub.subtitles.value.length > 0" class="iconbtn" title="重新翻译（清空旧译文后全量重翻）" @click="doTranslate(true)" :disabled="transcribing"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button>
-        <button class="iconbtn" title="设置" @click="emit('settings')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
-      </div>
-    </div>
-
     <div class="canvas" @click="togglePlay" @contextmenu.prevent="openCtxMenu">
       <CaptionPanel
         v-if="captionOn && item"
@@ -637,10 +637,13 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
         </div>
         <p class="empty-text">还没有在播放</p>
         <p class="empty-sub">从右侧播放列表选择，或导入你的媒体文件</p>
-        <button class="open-btn" @click="emit('import')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h4l2-2h4l2 2h4v11H4z"/></svg>
-          打开文件
-        </button>
+        <div class="empty-actions">
+          <button class="open-btn" @click="emit('import')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h4l2-2h4l2 2h4v11H4z" /></svg>
+            导入文件
+          </button>
+          <button class="open-btn ghost" @click="emit('importFolder')">导入文件夹</button>
+        </div>
       </div>
 
       <div v-else class="playing">
@@ -678,7 +681,7 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
     <Transition name="fade">
       <div
         class="controls"
-        v-show="!isFullscreen || controlsVisible"
+        v-show="props.chromeVisible !== false && (!isFullscreen || controlsVisible)"
         :class="{ 'fs-overlay': isFullscreen }"
       >
       <div class="seek-row">
@@ -696,8 +699,8 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
         <div class="btn-group">
           <button class="ctl" title="上一首" :disabled="!item" @click="prev"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14M19 6l-8 6 8 6z"/></svg></button>
           <button class="ctl play" :disabled="!item" :title="playing ? '暂停' : '播放'" @click="togglePlay">
-            <svg v-if="playing" width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14M16 5v14"/></svg>
-            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5l12 7-12 7z"/></svg>
+            <svg v-if="playing" width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--on-accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14M16 5v14"/></svg>
+            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--on-accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5l12 7-12 7z"/></svg>
           </button>
           <button class="ctl" title="下一首" :disabled="!item" @click="next"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 5v14M5 6l8 6-8 6z"/></svg></button>
         </div>
@@ -803,81 +806,52 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
 
 <style scoped>
 .stage {
-  flex: 1;
-  min-width: 0;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  background: #000;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--stage-bg, #000);
 }
 
-.stage-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0 16px;
-  min-height: 52px;
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--line);
+.stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 55% at 62% 34%, rgba(74, 96, 112, 0.28), transparent 70%),
+    radial-gradient(40% 40% at 18% 80%, rgba(40, 58, 62, 0.22), transparent 72%),
+    var(--bg-0);
+  opacity: 0;
+  transition: opacity 320ms ease;
+  pointer-events: none;
 }
 
-.toolbar {
-  display: flex;
-  gap: 2px;
-}
-
-.iconbtn {
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--fg-1);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.iconbtn:hover {
-  background: var(--bg-2);
-}
-
-.iconbtn svg {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
-  display: block;
-  stroke: var(--fg-2);
-}
-
-.iconbtn:hover svg {
-  stroke: var(--fg-1);
-}
-
-.iconbtn.active svg {
-  stroke: var(--accent);
-}
-
-.iconbtn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.iconbtn:disabled:hover {
-  background: transparent;
+.stage.has-drawer::before {
+  opacity: 1;
 }
 
 .canvas {
-  position: relative;
-  flex: 1;
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 0;
   overflow: hidden;
+  transition:
+    top 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    left 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    right 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    bottom 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    border-radius 320ms ease;
+}
+
+.stage.has-drawer .canvas {
+  top: 16px;
+  left: 16px;
+  right: 336px;
+  bottom: 88px;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55);
 }
 
 .empty {
@@ -916,8 +890,15 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
   color: var(--fg-3);
 }
 
-.open-btn {
+.empty-actions {
   margin-top: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.open-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -925,11 +906,17 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
   border: none;
   border-radius: 12px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.open-btn.ghost {
+  background: transparent;
+  border: 1px solid var(--panel-border);
+  color: var(--fg-2);
 }
 
 .open-btn:hover {
@@ -957,9 +944,8 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
 }
 
 .playing video {
-  flex: 1;
   width: 100%;
-  min-height: 0;
+  height: 100%;
   background: #000;
   outline: none;
   cursor: pointer;
@@ -983,28 +969,31 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
 }
 
 .controls {
-  padding: 10px 16px 14px;
-  background: var(--bg-1);
-  border-top: 1px solid var(--line);
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 12px;
+  z-index: 24;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  background: transparent;
+  border: none;
+  transition:
+    right 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 320ms ease,
+    transform 320ms ease;
 }
 
-/* 全屏时控制条悬浮于视频上方，带渐变底，随鼠标静止自动隐藏 */
-.controls.fs-overlay {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 40;
-  border-top: none;
-  background: linear-gradient(
-    180deg,
-    rgba(13, 13, 15, 0) 0%,
-    rgba(13, 13, 15, 0.55) 42%,
-    rgba(13, 13, 15, 0.92) 100%
-  );
+.stage.has-drawer .controls {
+  right: 336px;
+}
+
+.stage.chrome-hidden .controls {
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
 }
 
 /* 全屏且控制条隐藏时隐藏鼠标指针，移动鼠标即恢复 */
@@ -1013,6 +1002,7 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
 }
 
 .seek-row {
+  padding: 0 8px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1048,15 +1038,32 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
 }
 
 .btn-row {
+  height: 52px;
+  padding: 0 10px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: center;
+  gap: 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+  backdrop-filter: blur(24px);
+  box-shadow: var(--shadow-panel);
+}
+
+.btn-row .flex-spacer {
+  display: none;
 }
 
 .btn-group {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
+}
+
+.btn-group + .btn-group {
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
 }
 
 .flex-spacer {
@@ -1064,16 +1071,16 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
 }
 
 .ctl {
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
   background: transparent;
   color: var(--fg-2);
-  border-radius: 10px;
+  border-radius: 50%;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -1248,22 +1255,34 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
 }
 
 .ctl.play {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
+  flex-basis: 42px;
+  margin: 0 4px;
   border-radius: 50%;
-  color: #fff;
+  color: var(--on-accent);
   background: var(--accent);
 }
 
-.ctl.play:hover:not(:disabled) {
+.ctl.play:hover {
   background: var(--accent);
-  opacity: 0.9;
+  filter: brightness(1.08);
+}
+
+.seek-num {
+  font-size: 9px;
+}
+
+.rate-btn,
+.seek {
+  width: auto;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--panel-border);
+  font-size: 11px;
 }
 
 .rate-btn {
-  width: auto;
-  padding: 0 9px;
-  font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
@@ -1422,4 +1441,12 @@ defineExpose({ togglePlay, seekBy, seekToSeconds, next, prev, toggleMute, adjust
   color: var(--accent);
 }
 
+@media (max-width: 900px) {
+  .stage.has-drawer .canvas {
+    right: 296px;
+  }
+  .stage.has-drawer .controls {
+    right: 296px;
+  }
+}
 </style>
