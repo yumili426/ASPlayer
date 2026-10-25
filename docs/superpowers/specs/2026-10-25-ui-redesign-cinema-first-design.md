@@ -71,7 +71,7 @@
 | 有原文、存在空译文 | 翻译 | 补齐空译文 |
 | 有原文且全部有译文 | 已就绪 | 展开字幕抽屉（已展开则无操作） |
 
-- `⋯` 菜单：导入字幕、重新翻译、悬浮字幕窗、画面比例、播放模式、设置、快捷键。
+- `⋯` 菜单：导入字幕、重新翻译、悬浮字幕窗、切换播放模式、设置。画面比例保留在视频右键菜单。
 
 ### 3.2 素材轨
 
@@ -88,7 +88,7 @@
 
 - 头部：标题「字幕」、`原文/双语/译文` 分段、搜索按钮、收起按钮。
 - 搜索点击后在头部下方展开输入框，再次点击或清空后收起。
-- 当前句卡片：原文、译文、`重听 / 下一句 / 锁定`。
+- 当前句卡片：原文、译文、`重听 / 下一句`。
 - 文稿列表：时间戳 + 原文 + 译文；当前行高亮并自动滚动；点击跳转；右键查词。
 - 空状态：无字幕时显示说明与「开始转写」按钮；转写中显示进度与取消。
 - 展开/收起状态持久化到 `asplayer-subtitle-drawer-v1`（`open` / `closed`）。
@@ -101,7 +101,7 @@
 - 隐藏范围：顶栏、素材轨、底部进度与胶囊。**字幕抽屉不隐藏**，它是内容而非 chrome。
 - 恢复条件：鼠标移动、任意按键、窗口重新获得焦点、播放暂停。
 - 全屏与窗口模式行为一致。
-- 提供设置项「播放时自动隐藏控件」，默认开启，持久化键 `asplayer-chrome-autohide-v1`。
+- 提供设置项「播放时自动隐藏控件」，默认开启，作为 `chromeAutoHide` 字段并入现有 `asplayer-playback-v1`。
 
 ### 3.5 快捷键
 
@@ -193,12 +193,13 @@
 | --- | --- |
 | `app/src/App.vue` | 三栏 flex 改为单层舞台 + 绝对定位浮层；接管自动隐藏计时器、抽屉状态、模式联动 |
 | `app/src/components/TitleBar.vue` | 改为透明顶栏浮层；窗口控制与拖拽区保留 |
-| `app/src/components/PlayerStage.vue` | 移除顶部两行工具栏；视频区支持安全区；拆出底部控制 |
-| `app/src/components/TransportBar.vue` | 新增：进度行 + 控制胶囊 + AB 区间 |
-| `app/src/components/PlaylistPanel.vue` | 改造为 `MediaRail.vue`：双标签、悬停展开、进度细线；保留右键菜单与删除弹窗 |
-| `app/src/components/SubtitlePanel.vue` | 改造为 `SubtitleDrawer.vue`：玻璃抽屉、头部收合、当前句卡片；内部逻辑复用 |
+| `app/src/components/PlayerStage.vue` | 移除顶部两行工具栏；视频区支持安全区；底部控制原地重构为浮层胶囊（不拆新组件） |
+| `app/src/components/MediaRail.vue` | 新增：收起封面列 + 悬停展开容器 + 双标签；内部复用 `PlaylistPanel` |
+| `app/src/components/PlaylistPanel.vue` | 增加 `embedded` / `recentOnly` 模式；保留右键菜单、删除弹窗与排序；列表项加进度细线 |
+| `app/src/components/SubtitlePanel.vue` | 原地改造为玻璃抽屉：头部收合、搜索折叠、当前句卡片；内部逻辑复用 |
+| `app/src/lib/uiState.ts` | 新增纯函数：最近播放排序、主按钮状态解析（可单测） |
 | `app/src/styles/tokens.css` | 重写令牌，补齐深/浅两套 |
-| `app/src/stores/playback.ts` | 如需，暴露当前播放模式供抽屉默认状态使用（已存在 `playbackMode`） |
+| `app/src/stores/playback.ts` | 新增 `chromeAutoHide` 字段（并入现有持久化键） |
 | `app/src/components/SettingsPanel.vue` | 外观页新增「播放时自动隐藏控件」开关 |
 | `app/src-tauri/src/db.rs` | 迁移、`MediaItem` 查询字段、`save_playback_position` 写入 |
 | `app/src-tauri/src/media.rs` | `MediaItem` 加 `last_played_at` |
