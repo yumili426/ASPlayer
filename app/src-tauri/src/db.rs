@@ -35,6 +35,7 @@ impl MediaDb {
                 speed             REAL NOT NULL DEFAULT 1.0,
                 subtitle_status   TEXT NOT NULL DEFAULT 'none',
                 subtitle_lang     TEXT NOT NULL DEFAULT '',
+                last_played_at    TEXT,
                 added_at          TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
@@ -59,7 +60,8 @@ impl MediaDb {
         Self::migrate(conn)?;
         Self::migrate_playback_params(conn)?;
         Self::migrate_transcribe(conn)?;
-        Self::migrate_intensive(conn)
+        Self::migrate_intensive(conn)?;
+        Self::migrate_last_played(conn)
     }
 
     /// 幂等迁移：给 media_files 补齐缺失的列（老版本数据库升级用）。
@@ -120,6 +122,18 @@ impl MediaDb {
         Ok(())
     }
 
+    /// 幂等迁移（v4）：记录最近播放时间。
+    pub fn migrate_last_played(conn: &Connection) -> rusqlite::Result<()> {
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(media_files)")?
+            .query_map([], |r| r.get(1))?
+            .collect::<Result<_, _>>()?;
+        if !cols.iter().any(|c| c == "last_played_at") {
+            conn.execute_batch("ALTER TABLE media_files ADD COLUMN last_played_at TEXT;")?;
+        }
+        Ok(())
+    }
+
     /// 按路径插入或更新，返回 id
     pub fn upsert_media(&self, path: &str, title: &str, media_type: &str, file_size: i64) -> rusqlite::Result<i64> {
         self.conn.execute(
@@ -136,7 +150,7 @@ impl MediaDb {
                     m.file_size, m.subtitle_status, m.subtitle_lang,
                     (SELECT COUNT(*) FROM subtitles s WHERE s.media_id = m.id),
                     COALESCE(m.speed, 1.0), COALESCE(m.volume, 1.0),
-                    m.transcribe_next_ms, m.profile_override
+                    m.transcribe_next_ms, m.profile_override, m.last_played_at
              FROM media_files m ORDER BY m.added_at DESC, m.id DESC",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -155,6 +169,7 @@ impl MediaDb {
                 speed: r.get(10)?,
                 volume: r.get(11)?,
                 profile_override: r.get(13)?,
+                last_played_at: r.get(14)?,
             })
         })?;
         rows.collect()
@@ -162,8 +177,10 @@ impl MediaDb {
 
     pub fn save_playback_position(&self, id: i64, position_ms: i64) -> rusqlite::Result<()> {
         self.conn.execute(
-            "UPDATE media_files SET playback_position = ?1 WHERE id = ?2",
-            [position_ms.to_string().as_str(), &id.to_string()],
+            "UPDATE media_files
+                SET playback_position = ?1, last_played_at = datetime('now')
+              WHERE id = ?2",
+            rusqlite::params![position_ms, id],
         )?;
         Ok(())
     }
@@ -693,6 +710,47 @@ mod tests {
         db.set_media_profile(id, None)?;
         let rows = db.list_media()?;
         assert_eq!(rows[0].profile_override, None);
+        Ok(())
+    }
+
+    #[test]
+    fn save_position_stamps_last_played_at() -> rusqlite::Result<()> {
+        let db = MediaDb::open_in_memory()?;
+        let id = db.upsert_media("D:/m/a.mp3", "a", "audio", 0)?;
+        assert_eq!(db.list_media()?[0].last_played_at, None);
+
+        db.save_playback_position(id, 42_000)?;
+
+        let item = &db.list_media()?[0];
+        assert_eq!(item.playback_position, 42_000);
+        assert!(item.last_played_at.is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn migrate_adds_last_played_column() -> rusqlite::Result<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            "CREATE TABLE media_files (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                path              TEXT NOT NULL UNIQUE,
+                title             TEXT NOT NULL,
+                media_type        TEXT NOT NULL,
+                duration_ms       INTEGER NOT NULL DEFAULT 0,
+                playback_position INTEGER NOT NULL DEFAULT 0,
+                speed             REAL NOT NULL DEFAULT 1.0,
+                added_at          TEXT NOT NULL DEFAULT (datetime('now'))
+            );",
+        )?;
+
+        MediaDb::migrate_last_played(&conn)?;
+        MediaDb::migrate_last_played(&conn)?;
+
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(media_files)")?
+            .query_map([], |r| r.get(1))?
+            .collect::<Result<_, _>>()?;
+        assert!(cols.iter().any(|c| c == "last_played_at"));
         Ok(())
     }
 }

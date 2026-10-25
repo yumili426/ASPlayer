@@ -29,6 +29,7 @@ pub struct MediaItem {
     pub speed: f64,              // 每文件记住的播放速度（默认 1.0）
     pub volume: f64,             // 每文件记住的音量 0.0-1.0（默认 1.0）
     pub profile_override: Option<String>, // 精听/连播按文件覆盖（None=跟随全局）
+    pub last_played_at: Option<String>, // 最近播放时间；从未播放为 None
 }
 
 /// 判断文件是否为受支持的媒体，返回 Some("audio"/"video")

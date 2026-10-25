@@ -13,6 +13,7 @@ export interface MediaItem {
   speed: number;
   volume: number;
   profile_override: "broadcast" | "intensive" | null;
+  last_played_at: string | null;
 }
 
 export interface Subtitle {
