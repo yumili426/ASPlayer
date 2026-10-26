@@ -45,6 +45,17 @@
   --topbar-scrim: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent);
   --bottombar-scrim: linear-gradient(0deg, rgba(0, 0, 0, 0.62), transparent);
 
+  /* 舞台底色（抽屉打开时视频卡片四周）与卡片投影 */
+  --stage-surround:
+    radial-gradient(58% 52% at 60% 32%, rgba(74, 96, 112, 0.28), transparent 72%),
+    radial-gradient(42% 42% at 16% 82%, rgba(40, 58, 62, 0.22), transparent 74%),
+    #08090a;
+  --stage-card-shadow: 0 22px 60px rgba(0, 0, 0, 0.55);
+
+  /* 落在主题表面上的进度条 */
+  --track-bg: rgba(255, 255, 255, 0.16);
+  --track-thumb: #f5f6f7;
+
   /* 布局尺寸 */
   --topbar-h: 52px;
   --rail-w: 44px;
@@ -57,42 +68,59 @@
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg-0: #eef0f3;
+  --bg-0: #e9ecf0;
   --bg-1: #f7f8fa;
   --bg-2: #ffffff;
-  --bg-glass: rgba(255, 255, 255, 0.82);
+  --bg-glass: rgba(255, 255, 255, 0.86);
 
   --fg-1: #17191c;
-  --fg-2: #5c6268;
-  --fg-3: #9299a0;
+  --fg-2: #4d545b;
+  --fg-3: #6d747b;
 
   --accent: #1c2024;
   --accent-soft: #3b6ea5;
-  --accent-dim: rgba(28, 32, 36, 0.1);
+  --accent-dim: rgba(28, 32, 36, 0.09);
   --on-accent: #ffffff;
 
   --danger: #d13438;
   --danger-fg: #ffffff;
 
-  --line: rgba(0, 0, 0, 0.08);
-  --panel-border: rgba(0, 0, 0, 0.08);
-  --panel-bg: rgba(255, 255, 255, 0.82);
-  --panel-bg-strong: rgba(255, 255, 255, 0.94);
+  --line: rgba(15, 20, 25, 0.09);
+  --panel-border: rgba(15, 20, 25, 0.09);
+  --panel-bg: rgba(255, 255, 255, 0.86);
+  --panel-bg-strong: rgba(255, 255, 255, 0.95);
 
-  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.08);
-  --shadow-panel: 0 18px 48px rgba(20, 24, 30, 0.16);
+  --shadow-card: 0 8px 22px rgba(24, 30, 38, 0.12);
+  --shadow-panel: 0 16px 40px rgba(20, 24, 30, 0.16);
 
-  --topbar-scrim: linear-gradient(180deg, rgba(255, 255, 255, 0.72), transparent);
-  --bottombar-scrim: linear-gradient(0deg, rgba(255, 255, 255, 0.78), transparent);
+  --topbar-scrim: linear-gradient(180deg, rgba(255, 255, 255, 0.82), transparent);
+  --bottombar-scrim: linear-gradient(0deg, rgba(255, 255, 255, 0.86), transparent);
+
+  --stage-surround:
+    radial-gradient(58% 52% at 60% 32%, rgba(176, 192, 208, 0.34), transparent 72%),
+    radial-gradient(42% 42% at 16% 82%, rgba(186, 196, 204, 0.3), transparent 74%),
+    #e9ecf0;
+  --stage-card-shadow: 0 14px 36px rgba(24, 30, 38, 0.2);
+
+  --track-bg: rgba(15, 20, 25, 0.16);
+  --track-thumb: #17191c;
 }
 
-/* 舞台恒为深色（与主题无关）：浮在画面上的文字与控件使用固定浅色 */
+/* 压在视频画面上的悬浮控件恒为深色玻璃（与主题无关） */
 :root {
   --stage-bg: #08090a;
   --stage-fg: rgba(255, 255, 255, 0.72);
   --stage-track: rgba(255, 255, 255, 0.22);
   --stage-strong: #f5f6f7;
   --stage-scrim: linear-gradient(0deg, rgba(0, 0, 0, 0.62), transparent);
+
+  --chrome-bg: rgba(16, 19, 22, 0.72);
+  --chrome-border: rgba(255, 255, 255, 0.09);
+  --chrome-fg: rgba(255, 255, 255, 0.72);
+  --chrome-fg-strong: #f5f6f7;
+  --chrome-hover: rgba(255, 255, 255, 0.1);
+  --chrome-on-strong: #0a1118;
+  --chrome-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
 /* ---- 全局基础 ---- */

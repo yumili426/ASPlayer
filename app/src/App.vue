@@ -119,10 +119,17 @@ const meta = computed(() => {
 // ---- 播放中自动隐藏顶栏 / 左轨 ----
 let idleTimer: number | null = null;
 
+const TEXT_INPUT_TYPES = [
+  "text", "search", "url", "tel", "email", "password", "number",
+  "date", "datetime-local", "month", "time", "week",
+];
+
 function isEditableFocus() {
   const el = document.activeElement as HTMLElement | null;
   if (!el) return false;
-  return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable;
+  // 进度条/音量条等 range 输入会持有焦点，但它们不需要保持界面常亮
+  if (el instanceof HTMLInputElement) return TEXT_INPUT_TYPES.includes(el.type);
+  return el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable;
 }
 
 function canAutoHide() {
@@ -814,7 +821,7 @@ onUnmounted(() => {
   position: absolute;
   top: 64px;
   right: var(--gutter);
-  bottom: var(--gutter);
+  bottom: var(--transport-h);
   z-index: 26;
 }
 
@@ -830,14 +837,14 @@ onUnmounted(() => {
   place-items: center;
   padding: 0;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--panel-border);
-  background: var(--panel-bg);
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
   backdrop-filter: blur(16px);
-  color: var(--fg-2);
+  color: var(--chrome-fg);
 }
 
 .drawer-handle:hover {
-  color: var(--fg-1);
+  color: var(--chrome-fg-strong);
 }
 
 .drawer-handle svg {

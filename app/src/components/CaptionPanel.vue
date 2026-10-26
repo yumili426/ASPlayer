@@ -84,7 +84,8 @@ const capVars = computed(() => ({
 }
 
 .caption.pos-bottom {
-  bottom: 22px;
+  bottom: var(--cap-bottom, 22px);
+  transition: bottom 320ms ease;
 }
 
 .caption.pos-top {

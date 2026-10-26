@@ -210,8 +210,9 @@ function stageLabel() {
     </div>
 
     <div v-if="nowSub && status !== 'error'" class="sp-now">
-      <div class="sp-now-en">{{ nowSub.text }}</div>
-      <div v-if="nowSub.translation" class="sp-now-zh">{{ nowSub.translation }}</div>
+      <div v-if="mode !== 'translation'" class="sp-now-en">{{ nowSub.text }}</div>
+      <div v-if="mode === 'bilingual' && nowSub.translation" class="sp-now-zh">{{ nowSub.translation }}</div>
+      <div v-if="mode === 'translation'" class="sp-now-zh sp-now-only">{{ nowSub.translation || nowSub.text }}</div>
       <div class="sp-now-actions">
         <button @click="emit('seek', nowSub.start_ms / 1000)">↺ 重听</button>
         <button @click="seekNext">下一句</button>
@@ -380,6 +381,12 @@ function stageLabel() {
   font-size: 13px;
   line-height: 1.45;
   color: var(--fg-2);
+}
+
+.sp-now-only {
+  margin-top: 0;
+  font-size: 14px;
+  color: var(--fg-1);
 }
 
 .sp-now-actions {

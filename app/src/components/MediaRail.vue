@@ -74,13 +74,6 @@ onBeforeUnmount(() => {
         :title="m.title"
         @click="emit('play', m)"
       ></button>
-      <div class="gap"></div>
-      <button class="rail-icon" title="设置" @click="emit('settings')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" />
-        </svg>
-      </button>
     </div>
 
     <div class="rail-expanded" :inert="!open">
@@ -124,6 +117,15 @@ onBeforeUnmount(() => {
         @set-profile="(m, v) => emit('setProfile', m, v)"
       />
     </div>
+
+    <div class="rail-foot">
+      <button class="rail-icon" title="设置" @click="emit('settings')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" />
+        </svg>
+      </button>
+    </div>
   </aside>
 </template>
 
@@ -131,20 +133,23 @@ onBeforeUnmount(() => {
 .rail {
   position: absolute;
   left: var(--gutter);
-  top: 64px;
-  bottom: 96px;
+  top: calc(50% - 148px);
+  height: 232px;
   width: var(--rail-w);
   z-index: 22;
   overflow: hidden;
   border-radius: var(--radius-card);
-  border: 1px solid var(--panel-border);
-  background: var(--panel-bg);
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
   backdrop-filter: blur(20px);
   box-shadow: var(--shadow-card);
   visibility: visible;
   transition:
     width 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    height 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    top 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
     background 320ms ease,
+    border-color 320ms ease,
     opacity 320ms ease,
     transform 320ms ease,
     visibility 0s linear 0s;
@@ -157,14 +162,22 @@ onBeforeUnmount(() => {
   visibility: hidden;
   transition:
     width 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    height 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    top 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
     background 320ms ease,
+    border-color 320ms ease,
     opacity 320ms ease,
     transform 320ms ease,
     visibility 0s linear 320ms;
 }
 
+/* 收起时是压在画面上的深色胶囊；展开后是主题表面上的列表 */
 .rail.open {
   width: var(--rail-w-open);
+  top: 64px;
+  height: calc(100vh - 172px);
+  background: var(--panel-bg);
+  border-color: var(--panel-border);
 }
 
 .rail-collapsed {
@@ -210,8 +223,22 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
-.gap {
-  flex: 1;
+.rail-foot {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rail.open .rail-foot {
+  justify-content: flex-start;
+  padding-left: 12px;
+  border-top: 1px solid var(--line);
 }
 
 .rail-icon {
@@ -232,6 +259,25 @@ onBeforeUnmount(() => {
   color: var(--fg-1);
 }
 
+/* 设置按钮在收起态压在画面上 → 深色玻璃配色；展开后回到主题配色 */
+.rail-foot .rail-icon {
+  color: var(--chrome-fg);
+}
+
+.rail-foot .rail-icon:hover {
+  background: var(--chrome-hover);
+  color: var(--chrome-fg-strong);
+}
+
+.rail.open .rail-foot .rail-icon {
+  color: var(--fg-2);
+}
+
+.rail.open .rail-foot .rail-icon:hover {
+  background: var(--bg-2);
+  color: var(--fg-1);
+}
+
 .rail-icon svg {
   width: 15px;
   height: 15px;
@@ -242,7 +288,7 @@ onBeforeUnmount(() => {
   inset: 0;
   display: flex;
   flex-direction: column;
-  padding: 12px 10px 10px;
+  padding: 12px 10px 44px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 180ms ease 40ms;

@@ -706,12 +706,12 @@ defineExpose({
       </div>
       <div class="btn-row">
         <div class="btn-group">
-          <button class="ctl" title="上一首" :disabled="!item" @click="prev"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14M19 6l-8 6 8 6z"/></svg></button>
+          <button class="ctl" title="上一首" :disabled="!item" @click="prev"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14M19 6l-8 6 8 6z"/></svg></button>
           <button class="ctl play" :disabled="!item" :title="playing ? '暂停' : '播放'" @click="togglePlay">
-            <svg v-if="playing" width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--on-accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14M16 5v14"/></svg>
-            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--on-accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5l12 7-12 7z"/></svg>
+            <svg v-if="playing" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14M16 5v14"/></svg>
+            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5l12 7-12 7z"/></svg>
           </button>
-          <button class="ctl" title="下一首" :disabled="!item" @click="next"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 5v14M5 6l8 6-8 6z"/></svg></button>
+          <button class="ctl" title="下一首" :disabled="!item" @click="next"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 5v14M5 6l8 6-8 6z"/></svg></button>
         </div>
         <div class="flex-spacer"></div>
             <div class="btn-group">
@@ -736,27 +736,27 @@ defineExpose({
                 </Transition>
               </div>
               <button class="ctl" :disabled="!item" :title="pb.playback.loopMode === 'single' ? '单曲循环' : '列表循环'" @click="toggleLoop">
-                <svg v-if="pb.playback.loopMode === 'single'" fill="none" viewBox="0 0 24 24" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>
-                <svg v-else fill="none" viewBox="0 0 24 24" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+                <svg v-if="pb.playback.loopMode === 'single'" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>
+                <svg v-else fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
               </button>
-              <button class="ctl overlay-toggle" :class="{ active: props.overlayOn }" title="迷你悬浮字幕窗（Ctrl+Alt+O 显隐 · Ctrl+Alt+L 穿透锁定）" @click="emit('overlayToggle')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5"/><rect x="13" y="13" width="8" height="6" rx="1"/></svg></button>
+              <button class="ctl overlay-toggle" :class="{ active: props.overlayOn }" title="迷你悬浮字幕窗（Ctrl+Alt+O 显隐 · Ctrl+Alt+L 穿透锁定）" @click="emit('overlayToggle')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 9V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5"/><rect x="13" y="13" width="8" height="6" rx="1"/></svg></button>
               <button class="ctl subtitle-toggle" :class="{ active: drawerOpen }" title="字幕（Ctrl+T）" aria-label="字幕" @click="emit('toggleSubtitle')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15h4M11 10h6"/></svg></button>
             </div>
         <div class="btn-group">
           <button class="ctl seek" title="后退 15 秒" :disabled="!item" @click="seekBy(-15)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
             <span class="seek-num">15</span>
           </button>
           <button class="ctl seek" title="前进 15 秒" :disabled="!item" @click="seekBy(15)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
             <span class="seek-num">15</span>
           </button>
         </div>
         <div class="btn-group">
           <div class="vol-wrap" @mouseenter="showVolPop = true" @mouseleave="showVolPop = false" @wheel.prevent="onVolWheel">
             <button class="ctl" :disabled="!item" :title="muted || volume === 0 ? '取消静音' : '静音'" @click="toggleMute">
-              <svg v-if="muted || volume === 0" width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="m16 9 6 6"/><path d="m22 9-6 6"/></svg>
-              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="M15 9.3a4 4 0 0 1 0 5.4"/></svg>
+              <svg v-if="muted || volume === 0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="m16 9 6 6"/><path d="m22 9-6 6"/></svg>
+              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4.7a1 1 0 0 0-1.7-.7L5 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2l4.3 4a1 1 0 0 0 1.7-.7z"/><path d="M15 9.3a4 4 0 0 1 0 5.4"/></svg>
             </button>
             <Transition name="vol-pop">
               <div v-if="showVolPop" class="vol-pop">
@@ -779,8 +779,8 @@ defineExpose({
             </Transition>
           </div>
           <button class="ctl" :disabled="!item" :title="isFullscreen ? '退出全屏' : '全屏'" @click="toggleFullscreen">
-            <svg v-if="isFullscreen" width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>
-            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" style="stroke:var(--fg-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+            <svg v-if="isFullscreen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>
+            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
           </button>
         </div>
       </div>
@@ -815,28 +815,39 @@ defineExpose({
 </template>
 
 <style scoped>
+/* 控制条默认压在视频上 → 固定深色玻璃；抽屉打开时落在主题表面上 → 跟随主题 */
 .stage {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: #000;
+  background: var(--stage-surround);
+  --cap-bottom: 104px;
+
+  --ctl-bg: var(--chrome-bg);
+  --ctl-border: var(--chrome-border);
+  --ctl-fg: var(--chrome-fg);
+  --ctl-fg-strong: var(--chrome-fg-strong);
+  --ctl-hover: var(--chrome-hover);
+  --ctl-play-bg: var(--chrome-fg-strong);
+  --ctl-play-fg: var(--chrome-on-strong);
+  --seek-fg: var(--stage-fg);
+  --seek-track: var(--stage-track);
+  --seek-thumb: var(--stage-strong);
 }
 
-.stage::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(60% 55% at 62% 34%, rgba(74, 96, 112, 0.28), transparent 70%),
-    radial-gradient(40% 40% at 18% 80%, rgba(40, 58, 62, 0.22), transparent 72%),
-    var(--stage-bg);
-  opacity: 0;
-  transition: opacity 320ms ease;
-  pointer-events: none;
-}
+.stage.has-drawer {
+  --cap-bottom: 22px;
 
-.stage.has-drawer::before {
-  opacity: 1;
+  --ctl-bg: var(--panel-bg);
+  --ctl-border: var(--panel-border);
+  --ctl-fg: var(--fg-2);
+  --ctl-fg-strong: var(--fg-1);
+  --ctl-hover: var(--accent-dim);
+  --ctl-play-bg: var(--accent);
+  --ctl-play-fg: var(--on-accent);
+  --seek-fg: var(--fg-2);
+  --seek-track: var(--track-bg);
+  --seek-thumb: var(--track-thumb);
 }
 
 .canvas {
@@ -855,13 +866,13 @@ defineExpose({
 }
 
 .stage.has-drawer .canvas {
-  top: 16px;
+  top: 64px;
   left: 16px;
-  right: 336px;
-  bottom: 88px;
+  right: 352px;
+  bottom: var(--transport-h);
   border-radius: var(--radius-card);
   overflow: hidden;
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--stage-card-shadow);
 }
 
 .empty {
@@ -891,13 +902,13 @@ defineExpose({
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: #f5f6f7;
+  color: var(--fg-1);
 }
 
 .empty-sub {
   margin-top: 8px;
   font-size: 13px;
-  color: #a8b0b8;
+  color: var(--fg-2);
 }
 
 .empty-actions {
@@ -925,12 +936,12 @@ defineExpose({
 
 .open-btn.ghost {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #c9d1d9;
+  border: 1px solid var(--line);
+  color: var(--fg-2);
 }
 
 .open-btn.ghost:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-2);
 }
 
 .open-btn:hover {
@@ -1014,8 +1025,17 @@ defineExpose({
   z-index: -1;
 }
 
+/* 抽屉打开时控制条已在卡片下方的主题表面上，不需要压暗渐变 */
+.stage.has-drawer .controls::before {
+  background: none;
+}
+
 .stage.has-drawer .controls {
-  right: 336px;
+  right: 352px;
+}
+
+.stage.chrome-hidden {
+  --cap-bottom: 24px;
 }
 
 .stage.chrome-hidden .controls {
@@ -1043,9 +1063,8 @@ defineExpose({
   width: 100%;
 }
 
-/* 进度行直接浮于始终深色的舞台/视频之上，故使用固定浅色而非主题令牌 */
 .time {
-  color: var(--stage-fg);
+  color: var(--seek-fg);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   min-width: 40px;
@@ -1057,7 +1076,7 @@ defineExpose({
   appearance: none;
   height: 4px;
   border-radius: var(--radius-pill);
-  background: var(--stage-track);
+  background: var(--seek-track);
   border: none;
   outline: none;
   cursor: pointer;
@@ -1068,7 +1087,7 @@ defineExpose({
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: var(--stage-strong);
+  background: var(--seek-thumb);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
@@ -1080,8 +1099,8 @@ defineExpose({
   justify-content: center;
   gap: 10px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--panel-border);
-  background: var(--panel-bg);
+  border: 1px solid var(--ctl-border);
+  background: var(--ctl-bg);
   backdrop-filter: blur(24px);
   box-shadow: var(--shadow-panel);
 }
@@ -1098,7 +1117,7 @@ defineExpose({
 
 .btn-group + .btn-group {
   padding-left: 10px;
-  border-left: 1px solid var(--line);
+  border-left: 1px solid var(--ctl-border);
 }
 
 .flex-spacer {
@@ -1114,15 +1133,15 @@ defineExpose({
   justify-content: center;
   border: none;
   background: transparent;
-  color: var(--fg-2);
+  color: var(--ctl-fg);
   border-radius: 50%;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
 
 .ctl:hover:not(:disabled) {
-  background: var(--bg-2);
-  color: var(--fg-1);
+  background: var(--ctl-hover);
+  color: var(--ctl-fg-strong);
 }
 
 .ctl:disabled {
@@ -1135,7 +1154,7 @@ defineExpose({
   height: 18px;
   flex: 0 0 18px;
   display: block;
-  stroke: var(--fg-2);
+  stroke: currentColor;
 }
 
 .vol-wrap {
@@ -1265,12 +1284,10 @@ defineExpose({
   opacity: 0;
 }
 
-.ctl.overlay-toggle.active {
-  background: var(--accent-dim);
-}
-
+.ctl.overlay-toggle.active,
 .ctl.subtitle-toggle.active {
-  background: var(--accent-dim);
+  background: var(--ctl-hover);
+  color: var(--ctl-fg-strong);
 }
 
 .ctl.seek {
@@ -1285,12 +1302,12 @@ defineExpose({
   font-size: 9px;
   font-weight: 600;
   line-height: 1;
-  color: var(--fg-2);
+  color: var(--ctl-fg);
   pointer-events: none;
 }
 
 .ctl.seek:hover .seek-num {
-  color: var(--fg-1);
+  color: var(--ctl-fg-strong);
 }
 
 .ctl.play {
@@ -1299,25 +1316,22 @@ defineExpose({
   flex-basis: 42px;
   margin: 0 4px;
   border-radius: 50%;
-  color: var(--on-accent);
-  background: var(--accent);
+  color: var(--ctl-play-fg);
+  background: var(--ctl-play-bg);
 }
 
 .ctl.play:hover:not(:disabled) {
-  background: var(--accent);
+  background: var(--ctl-play-bg);
+  color: var(--ctl-play-fg);
   filter: brightness(1.08);
 }
 
-.rate-btn,
-.seek {
-  width: auto;
-  padding: 0 10px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--panel-border);
-  font-size: 11px;
-}
-
 .rate-btn {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
@@ -1330,7 +1344,9 @@ defineExpose({
 .rate-menu {
   position: absolute;
   bottom: calc(100% + 10px);
-  right: 0;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
   min-width: 132px;
   padding: 6px;
   background: var(--bg-glass);
@@ -1388,7 +1404,7 @@ defineExpose({
 .rate-pop-enter-from,
 .rate-pop-leave-to {
   opacity: 0;
-  transform: translateY(6px);
+  transform: translate(-50%, 6px);
 }
 
 .seek-wrap {
@@ -1478,10 +1494,10 @@ defineExpose({
 
 @media (max-width: 900px) {
   .stage.has-drawer .canvas {
-    right: 296px;
+    right: 312px;
   }
   .stage.has-drawer .controls {
-    right: 296px;
+    right: 312px;
   }
 }
 </style>

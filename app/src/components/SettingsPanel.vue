@@ -427,8 +427,8 @@ function onClick(e: MouseEvent) {
       <div class="section" v-show="activeTab === 'appearance'">
         <div class="section-label">外观</div>
 
-        <div class="row">
-          <span class="row-label">主题</span>
+        <div class="item">
+          <div class="txt"><div class="lb">主题</div></div>
           <div class="segmented">
             <button
               class="segment"
@@ -457,133 +457,98 @@ function onClick(e: MouseEvent) {
           </div>
         </div>
 
-        <div class="row">
-          <span class="row-label">播放时自动隐藏控件</span>
-          <div class="segmented">
-            <button
-              class="segment"
-              :class="{ active: pb.playback.chromeAutoHide }"
-              @click="pb.playback.chromeAutoHide = true"
-            >
-              开
-            </button>
-            <button
-              class="segment"
-              :class="{ active: !pb.playback.chromeAutoHide }"
-              @click="pb.playback.chromeAutoHide = false"
-            >
-              关
-            </button>
+        <div class="item">
+          <div class="txt">
+            <div class="lb">播放时自动隐藏控件</div>
+            <div class="ds">播放中鼠标静止 2.5 秒后隐藏顶栏、素材轨与控制条</div>
           </div>
+          <button
+            class="sw"
+            :class="{ on: pb.playback.chromeAutoHide }"
+            role="switch"
+            :aria-checked="pb.playback.chromeAutoHide"
+            @click="pb.playback.chromeAutoHide = !pb.playback.chromeAutoHide"
+          ></button>
         </div>
       </div>
 
       <div class="section" v-show="activeTab === 'playback'">
         <div class="section-label">播放</div>
 
-        <div class="row">
-          <span class="row-label">自动播放</span>
-          <div class="segmented">
-            <button
-              class="segment"
-              :class="{ active: pb.playback.autoplayNext }"
-              @click="pb.playback.autoplayNext = true"
-            >
-              开
-            </button>
-            <button
-              class="segment"
-              :class="{ active: !pb.playback.autoplayNext }"
-              @click="pb.playback.autoplayNext = false"
-            >
-              关
-            </button>
+        <div class="item">
+          <div class="txt">
+            <div class="lb">自动播放</div>
+            <div class="ds">播完当前集自动连播下一集</div>
           </div>
+          <button
+            class="sw"
+            :class="{ on: pb.playback.autoplayNext }"
+            role="switch"
+            :aria-checked="pb.playback.autoplayNext"
+            @click="pb.playback.autoplayNext = !pb.playback.autoplayNext"
+          ></button>
         </div>
 
-        <p class="hint">开启后，列表循环模式下播完当前集会连播下一集；关闭则播完即停（取消循环）。</p>
+        <div class="block">
+          <div class="item">
+            <div class="txt">
+              <div class="lb">播放模式</div>
+              <div class="ds">精听：每句结束暂停，仅在有字幕时生效</div>
+            </div>
+            <div class="segmented">
+              <button
+                class="segment"
+                :class="{ active: pb.playback.playbackMode === 'broadcast' }"
+                @click="pb.playback.playbackMode = 'broadcast'"
+              >
+                连播
+              </button>
+              <button
+                class="segment"
+                :class="{ active: pb.playback.playbackMode === 'intensive' }"
+                @click="pb.playback.playbackMode = 'intensive'"
+              >
+                精听
+              </button>
+            </div>
+          </div>
 
-        <div class="row">
-          <span class="row-label">播放模式</span>
-          <div class="segmented">
+          <div class="item sub">
+            <div class="txt"><div class="lb">自动暂停每句</div></div>
             <button
-              class="segment"
-              :class="{ active: pb.playback.playbackMode === 'broadcast' }"
-              @click="pb.playback.playbackMode = 'broadcast'"
-            >
-              连播
-            </button>
+              class="sw"
+              :class="{ on: pb.playback.intensiveAutoPause }"
+              role="switch"
+              :aria-checked="pb.playback.intensiveAutoPause"
+              @click="pb.playback.intensiveAutoPause = !pb.playback.intensiveAutoPause"
+            ></button>
+          </div>
+
+          <div class="item sub">
+            <div class="txt"><div class="lb">单句循环</div></div>
             <button
-              class="segment"
-              :class="{ active: pb.playback.playbackMode === 'intensive' }"
-              @click="pb.playback.playbackMode = 'intensive'"
-            >
-              精听
-            </button>
+              class="sw"
+              :class="{ on: pb.playback.intensiveSentenceLoop }"
+              role="switch"
+              :aria-checked="pb.playback.intensiveSentenceLoop"
+              @click="pb.playback.intensiveSentenceLoop = !pb.playback.intensiveSentenceLoop"
+            ></button>
+          </div>
+
+          <div class="item sub">
+            <div class="txt">
+              <div class="lb">盲听</div>
+              <div class="ds">字幕浮层隐藏译文，按住 H 可临时显示</div>
+            </div>
+            <button
+              class="sw"
+              :class="{ on: pb.playback.intensiveBlindListen }"
+              role="switch"
+              :aria-checked="pb.playback.intensiveBlindListen"
+              @click="pb.playback.intensiveBlindListen = !pb.playback.intensiveBlindListen"
+            ></button>
           </div>
         </div>
-        <p class="hint">精听：每句结束自动暂停、可单句循环、可盲听（隐藏译文）。仅在有字幕时生效。</p>
-
-        <div class="row">
-          <span class="row-label">精听 · 自动暂停每句</span>
-          <div class="segmented">
-            <button
-              class="segment"
-              :class="{ active: pb.playback.intensiveAutoPause }"
-              @click="pb.playback.intensiveAutoPause = true"
-            >
-              开
-            </button>
-            <button
-              class="segment"
-              :class="{ active: !pb.playback.intensiveAutoPause }"
-              @click="pb.playback.intensiveAutoPause = false"
-            >
-              关
-            </button>
-          </div>
-        </div>
-
-        <div class="row">
-          <span class="row-label">精听 · 单句循环</span>
-          <div class="segmented">
-            <button
-              class="segment"
-              :class="{ active: pb.playback.intensiveSentenceLoop }"
-              @click="pb.playback.intensiveSentenceLoop = true"
-            >
-              开
-            </button>
-            <button
-              class="segment"
-              :class="{ active: !pb.playback.intensiveSentenceLoop }"
-              @click="pb.playback.intensiveSentenceLoop = false"
-            >
-              关
-            </button>
-          </div>
-        </div>
-
-        <div class="row">
-          <span class="row-label">精听 · 盲听</span>
-          <div class="segmented">
-            <button
-              class="segment"
-              :class="{ active: pb.playback.intensiveBlindListen }"
-              @click="pb.playback.intensiveBlindListen = true"
-            >
-              开
-            </button>
-            <button
-              class="segment"
-              :class="{ active: !pb.playback.intensiveBlindListen }"
-              @click="pb.playback.intensiveBlindListen = false"
-            >
-              关
-            </button>
-          </div>
-        </div>
-        <p class="hint">盲听开启后字幕浮层隐藏译文（临时原文态）；按住 H 键可临时显示译文。</p>
       </div>
 
       <div class="section" v-show="activeTab === 'subtitle'">
@@ -818,8 +783,8 @@ function onClick(e: MouseEvent) {
           尚未下载所选模型「ggml-{{ ms.modelState.selected }}.bin」，转写前请先下载，或在「翻译」页改用云端 API。
         </div>
 
-        <div class="row model-current">
-          <span class="row-label">当前模型</span>
+        <div class="item model-current">
+          <div class="txt"><div class="lb">当前模型</div></div>
           <span class="model-path">ggml-{{ ms.modelState.selected }}.bin</span>
         </div>
 
@@ -1027,16 +992,75 @@ function onClick(e: MouseEvent) {
   margin-bottom: 12px;
 }
 
-.row {
+.item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
+  min-height: 44px;
+  padding: 9px 2px;
 }
 
-.row-label {
-  font-size: 14px;
+.item .txt {
+  min-width: 0;
+}
+
+.item .lb {
+  font-size: 13.5px;
   color: var(--fg-1);
+}
+
+.item .ds {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--fg-3);
+}
+
+.item.sub {
+  padding-left: 16px;
+}
+
+.item.sub .lb {
+  color: var(--fg-2);
+}
+
+.block {
+  margin-top: 18px;
+}
+
+.sw {
+  width: 36px;
+  height: 21px;
+  flex: none;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent-dim);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.sw::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--fg-2);
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.sw.on {
+  background: var(--accent);
+}
+
+.sw.on::after {
+  transform: translateX(15px);
+  background: var(--on-accent);
 }
 
 .segmented {
