@@ -1,5 +1,6 @@
 mod db;
 mod dict;
+mod export;
 mod floating;
 mod media;
 mod models;
@@ -234,6 +235,26 @@ fn get_subtitles(id: i64, state: State<AppState>) -> CmdResult<Vec<transcriber::
     db.get_subtitles(id).map_err(err_str)
 }
 
+/// 导出某媒体的字幕到指定路径；返回写入的段数。
+#[tauri::command]
+fn export_subtitles(
+    id: i64,
+    path: String,
+    format: String,
+    content: String,
+    state: State<AppState>,
+) -> CmdResult<usize> {
+    let format = export::ExportFormat::parse(&format)
+        .ok_or_else(|| "无效的导出格式".to_string())?;
+    let content = export::ContentMode::parse(&content)
+        .ok_or_else(|| "无效的导出内容".to_string())?;
+    let rows = {
+        let db = state.db.lock().map_err(err_str)?;
+        db.get_subtitles(id).map_err(err_str)?
+    };
+    export::write(&rows, Path::new(&path), format, content)
+}
+
 /// 查询某媒体的转写/翻译状态：返回 (status, lang)
 #[tauri::command]
 fn get_subtitle_status(id: i64, state: State<AppState>) -> CmdResult<(String, String)> {
@@ -371,6 +392,7 @@ pub fn run() {
             get_playback_params,
             set_media_profile,
             get_subtitles,
+            export_subtitles,
             get_subtitle_status,
             import_external_subtitle,
             save_settings,

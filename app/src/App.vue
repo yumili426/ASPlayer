@@ -6,6 +6,7 @@ import TitleBar from "./components/TitleBar.vue";
 import MediaRail from "./components/MediaRail.vue";
 import SubtitlePanel from "./components/SubtitlePanel.vue";
 import SettingsPanel from "./components/SettingsPanel.vue";
+import ExportDialog from "./components/ExportDialog.vue";
 import DictCard from "./components/DictCard.vue";
 import type { MediaItem, DictLookup } from "./types";
 import type { ProfileOverride } from "./lib/intensive";
@@ -41,6 +42,7 @@ const items = ref<MediaItem[]>([]);
 const current = ref<MediaItem | null>(null);
 const loading = ref(false);
 const settingsOpen = ref(false);
+const exportTarget = ref<MediaItem | null>(null);
 const theme = ref<"light" | "dark" | "system">("system");
 const stageFullscreen = ref(false);
 const unlisteners: (() => void)[] = [];
@@ -338,6 +340,19 @@ async function onImportSubtitle(mediaId: number) {
       sub.setStatus("error", "", 0, String(e));
     }
   }
+}
+
+// 右键菜单入口：只对已有字幕的媒体开放
+function openExport(item: MediaItem | null) {
+  if (!item || item.subtitle_count === 0) return;
+  exportTarget.value = item;
+}
+
+// 字幕面板入口：跟随当前媒体与已加载的字幕
+function openCurrentExport() {
+  const item = current.value;
+  if (!item || sub.subtitles.value.length === 0) return;
+  exportTarget.value = item;
 }
 
 function probeDurations() {
@@ -752,6 +767,7 @@ onUnmounted(() => {
       @import-folder="importFolder"
       @refresh="refresh"
       @import-subtitle="(item) => onImportSubtitle(item.id)"
+      @export-subtitle="openExport"
       @set-profile="onSetProfile"
       @settings="settingsOpen = true"
     />
@@ -771,6 +787,7 @@ onUnmounted(() => {
       @cancel="onCancelTranscribe"
       @lookup="onDictLookup"
       @transcribe="stageRef?.doTranscribe(false)"
+      @export="openCurrentExport"
     />
 
     <button v-else class="drawer-handle" title="展开字幕" @click="toggleSubtitle">
@@ -798,6 +815,8 @@ onUnmounted(() => {
       @lookup="onDictLookup"
       @download="onDictDownload"
     />
+
+    <ExportDialog :item="exportTarget" @close="exportTarget = null" />
 
     <SettingsPanel
       :open="settingsOpen"

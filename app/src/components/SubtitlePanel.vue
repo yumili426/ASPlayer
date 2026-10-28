@@ -18,6 +18,7 @@ const emit = defineEmits<{
   cancel: [];
   lookup: [text: string];
   transcribe: [];
+  export: [];
 }>();
 
 const cap = useCaptionStyle();
@@ -176,6 +177,16 @@ function stageLabel() {
         <button class="sp-modeseg" :class="{ active: mode === 'translation' }" @click="cap.captionStyle.mode = 'translation'">译文</button>
       </div>
       <div class="sp-actions">
+        <button
+          v-if="subtitles.length > 0"
+          class="sp-icon"
+          title="导出字幕"
+          @click="emit('export')"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v12M7 10l5 5 5-5M4 21h16" />
+          </svg>
+        </button>
         <button
           class="sp-icon"
           title="搜索字幕"

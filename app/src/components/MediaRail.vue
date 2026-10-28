@@ -19,6 +19,7 @@ const emit = defineEmits<{
   refresh: [];
   importSubtitle: [item: MediaItem];
   setProfile: [item: MediaItem, value: ProfileOverride];
+  exportSubtitle: [item: MediaItem];
   settings: [];
 }>();
 
@@ -114,6 +115,7 @@ onBeforeUnmount(() => {
         @import-folder="emit('importFolder')"
         @refresh="emit('refresh')"
         @import-subtitle="(m) => emit('importSubtitle', m)"
+        @export-subtitle="(m) => emit('exportSubtitle', m)"
         @set-profile="(m, v) => emit('setProfile', m, v)"
       />
     </div>

@@ -21,6 +21,7 @@ const emit = defineEmits<{
   close: [];
   importSubtitle: [item: MediaItem];
   setProfile: [item: MediaItem, value: ProfileOverride];
+  exportSubtitle: [item: MediaItem];
 }>();
 
 const ctxMenu = ref<{ x: number; y: number; item: MediaItem } | null>(null);
@@ -91,7 +92,7 @@ function fmtSize(bytes: number): string {
 
 function onContextMenu(e: MouseEvent, item: MediaItem) {
   const w = 180;
-  const h = 172;
+  const h = 208;
   const x = Math.min(e.clientX, window.innerWidth - w - 8);
   const y = Math.min(e.clientY, window.innerHeight - h - 8);
   ctxMenu.value = { x, y, item };
@@ -131,6 +132,11 @@ function playItem(item: MediaItem) {
 function importSubtitle(item: MediaItem) {
   closeCtx();
   emit("importSubtitle", item);
+}
+
+function exportSubtitle(item: MediaItem) {
+  closeCtx();
+  emit("exportSubtitle", item);
 }
 
 async function revealInFolder(item: MediaItem) {
@@ -323,6 +329,14 @@ function fmtDuration(ms: number): string {
         <button class="pl-ctx-item" @click="importSubtitle(ctxMenu!.item)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h6M7 13.5h9"/></svg>
           导入字幕
+        </button>
+        <button
+          class="pl-ctx-item"
+          :disabled="ctxMenu!.item.subtitle_count === 0"
+          @click="exportSubtitle(ctxMenu!.item)"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg>
+          导出字幕
         </button>
         <button class="pl-ctx-item" @click="revealInFolder(ctxMenu!.item)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
@@ -643,6 +657,15 @@ function fmtDuration(ms: number): string {
 
 .pl-ctx-item:hover {
   background: var(--accent-dim);
+}
+
+.pl-ctx-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pl-ctx-item:disabled:hover {
+  background: transparent;
 }
 
 .pl-ctx-item svg {
