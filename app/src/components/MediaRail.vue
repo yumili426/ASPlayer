@@ -25,10 +25,11 @@ const emit = defineEmits<{
 
 const tab = ref<"recent" | "all">("recent");
 const hover = ref(false);
+const menuOpen = ref(false);
 let enterTimer: number | null = null;
 let leaveTimer: number | null = null;
 
-const open = computed(() => props.pinned || hover.value);
+const open = computed(() => props.pinned || hover.value || menuOpen.value);
 
 const covers = computed(() => {
   const recent = sortRecentMedia(props.items);
@@ -117,6 +118,7 @@ onBeforeUnmount(() => {
         @import-subtitle="(m) => emit('importSubtitle', m)"
         @export-subtitle="(m) => emit('exportSubtitle', m)"
         @set-profile="(m, v) => emit('setProfile', m, v)"
+        @ctx-menu-change="(v) => (menuOpen = v)"
       />
     </div>
 

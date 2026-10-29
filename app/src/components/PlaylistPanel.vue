@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { MediaItem } from "../types";
@@ -22,6 +22,7 @@ const emit = defineEmits<{
   importSubtitle: [item: MediaItem];
   setProfile: [item: MediaItem, value: ProfileOverride];
   exportSubtitle: [item: MediaItem];
+  ctxMenuChange: [open: boolean];
 }>();
 
 const ctxMenu = ref<{ x: number; y: number; item: MediaItem } | null>(null);
@@ -105,6 +106,8 @@ function closeCtx() {
   ctxMenu.value = null;
   profileSub.value = null;
 }
+
+watch(ctxMenu, (v) => emit("ctxMenuChange", !!v));
 
 function openProfileSub(e: MouseEvent) {
   clearProfileCloseTimer();
