@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/Tauri-2-green.svg" alt="Tauri" />
   <img src="https://img.shields.io/badge/Vue-3-42b883.svg" alt="Vue" />
   <img src="https://img.shields.io/badge/whisper.cpp-via%20whisper--rs-orange.svg" alt="whisper.cpp" />
-  <img src="https://img.shields.io/badge/status-1.0.1-informational.svg" alt="Version" />
+  <img src="https://img.shields.io/badge/status-1.0.2-informational.svg" alt="Version" />
 </p>
 
 ---
